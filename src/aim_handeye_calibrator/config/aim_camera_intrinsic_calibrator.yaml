@@ -1,0 +1,17 @@
+/**:
+  ros__parameters:
+    image_topic: "/gx_camera_1/image_raw"
+    debug_image_topic: "/aim_camera_intrinsic/debug_image"
+    output_file: ""
+    camera_name: "front_1"
+    frame_id: "gx_camera_1"
+    distortion_model: "plumb_bob"
+    aim_solver_camera_matrix_key: "front_1_camera_matrix"
+    aim_solver_distortion_key: "front_1_distortion_coefficients"
+    board_cols: 11
+    board_rows: 8
+    min_samples: 12
+    square_size_m: 0.030
+    use_fisheye_model: false
+    fix_aspect_ratio: false
+    zero_tangent_distortion: false

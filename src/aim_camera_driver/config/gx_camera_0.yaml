@@ -1,0 +1,36 @@
+gx_camera_node:
+  ros__parameters:
+    device_sn: "KE0200060396"
+    device_index: 1
+    frame_id: "gx_camera_0"
+    image_topic: "/gx_camera_0/image_raw"
+    camera_info_topic: "/gx_camera_0/camera_info"
+    publish_rate: 100.0
+
+    width: 1280
+    height: 1024
+
+    gain: 25.0
+    auto_gain_max: 25.0
+    auto_gain_min: 2.0
+    auto_gain: 1
+
+    exposure_time: 20000.0
+    auto_exposure_time_max: 30000.0
+    auto_exposure_time_min: 1000.0
+    auto_exposure: 1
+
+    red_balance_ratio: 1.8906
+    green_balance_ratio: 1.0
+    blue_balance_ratio: 1.5703
+
+    camera_fx: 2594.8668197346
+    camera_fy: 2593.9303479068
+    camera_cx: 623.6194463792
+    camera_cy: 487.9543574800
+
+    dist_k1: 0.0013295332
+    dist_k2: -0.3225360920
+    dist_p1: 0.0008215090
+    dist_p2: 0.0001941072
+    dist_k3: 7.0936030151

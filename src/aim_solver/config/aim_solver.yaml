@@ -1,0 +1,52 @@
+/**:
+  ros__parameters:
+    # ---------- 前相机 #0(大恒工业相机) ----------
+    front_armor_set_topic: "/aim_detector/front_0/armor_sets"
+    front_armor_pose_set_topic: "/aim_solver/front_0/armor_pose_sets"
+    front_camera_info_topic: "/gx_camera_0/camera_info"
+    front_visualization_topic: "/aim_solver/front_0/visualization"
+    front_use_camera_info_topic: false
+    front_camera_matrix: [2594.8668197346, 0.0, 623.6194463792,
+                          0.0, 2593.9303479068, 487.9543574800,
+                          0.0, 0.0, 1.0]
+    front_distortion_coefficients: [0.0013295332, -0.3225360920, 0.0008215090,
+                                   0.0001941072, 7.0936030151]
+
+    # ---------- 前相机 #1(大恒工业相机) ----------
+    front_1_armor_set_topic: "/aim_detector/front_1/armor_sets"
+    front_1_armor_pose_set_topic: "/aim_solver/front_1/armor_pose_sets"
+    front_1_camera_info_topic: "/gx_camera_1/camera_info"
+    front_1_visualization_topic: "/aim_solver/front_1/visualization"
+    front_1_use_camera_info_topic: false
+    front_1_camera_matrix: [1543.5313225509, 0.0, 605.3761892974,
+                            0.0, 1543.6532647271, 492.7908483571,
+                            0.0, 0.0, 1.0]
+    front_1_distortion_coefficients: [-0.2065504948, 0.1520899445, 0.0002382891,
+                                      0.0006906806, 0.0535836285]
+
+    # ---------- 后相机(USB摄像头) ----------
+    back_armor_set_topic: "/aim_detector/back/armor_sets"
+    back_armor_pose_set_topic: "/aim_solver/back/armor_pose_sets"
+    back_camera_info_topic: "/usb_camera/camera_info"
+    back_visualization_topic: "/aim_solver/back/visualization"
+    back_use_camera_info_topic: false
+    back_camera_matrix: [549.8351599620, 0.0, 599.1912418111,
+                         0.0, 545.6222130545, 420.2722299780,
+                         0.0, 0.0, 1.0]
+    back_distortion_coefficients: [0.1255592953, -0.1963274373, -0.0012630831,
+                                   -0.0034363489, 0.0630439860]
+
+    # ---------- 共享参数 ----------
+    target_frame: "gimbal_world"
+    tf_lookup_timeout_sec: 0.01
+    tf_timestamp_offset_sec: 0.0
+    use_current_time_for_tf: false
+    enable_visualization: true
+    use_generic_mode: false
+    project_error_ratio_thres: 3.0
+    roll_thres_degree: 15.0
+    outpost_is_small_armor: true
+    enable_optimize_yaw: false
+    optimize_yaw_pitch_deg: 15.0
+    # Outpost armor plane: 75 deg to horizontal, i.e. 15 deg downward from vertical.
+    optimize_yaw_outpost_pitch_deg: -15.0

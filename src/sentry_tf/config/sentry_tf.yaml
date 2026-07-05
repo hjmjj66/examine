@@ -1,0 +1,45 @@
+# sentry_tf：由 /ly/gimbal/angles 广播 TF 链
+#   base_link --static(0)--> gimbal_small_yaw --(yaw inverse)--> gimbal_world
+#   gimbal_small_yaw --static(+Z)--> gimbal_barrel_joint --(pitch)--> gimbal_barrel
+# 角约定：yaw 左负右正；pitch 上正下负
+sentry_tf_node:
+  ros__parameters:
+    gimbal_topic: "/ly/gimbal/angles"
+    world_frame: "gimbal_world"
+    yaw_frame: "gimbal_small_yaw"
+    barrel_joint_frame: "gimbal_barrel_joint"
+    barrel_frame: "gimbal_barrel"
+    # 俯仰轴（barrel_joint）相对 yaw 轴交点沿 +Z 的抬升量（米），由静态 TF 发布
+    barrel_offset_z: 0.0
+
+# gimbal_barrel -> gx_camera_0 静态 TF（相机标定结果）
+barrel_to_camera_0:
+  x: 0.18438478
+  y: 0.04587220
+  z: -0.00171222
+  yaw: 0.00711905
+  pitch: -0.04169804
+  roll: 0.02000640
+  parent_frame: "gimbal_barrel"
+  child_frame: "gx_camera_0"
+
+# gimbal_barrel -> gx_camera_1 静态 TF（相机标定结果，待标定，当前为占位值）
+barrel_to_camera_1:
+  x: 0.16110050
+  y: -0.03868853
+  z: 0.00052739
+  yaw: 0.01822113
+  pitch: -0.01409036
+  roll: 0.00465397
+  parent_frame: "gimbal_barrel"
+  child_frame: "gx_camera_1"
+
+small_yaw_to_usb_camera:
+  x: -0.2
+  y: 0.0
+  z: 0.0
+  yaw: 1.58
+  pitch: 0.0173
+  roll: -1.4974
+  parent_frame: "gimbal_small_yaw"
+  child_frame: "usb_camera"

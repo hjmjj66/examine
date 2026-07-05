@@ -1,0 +1,32 @@
+usb_camera_node:
+  ros__parameters:
+    device_index: 0
+    frame_id: "usb_camera"
+    image_topic: "/usb_camera/image_raw"
+    camera_info_topic: "/usb_camera/camera_info"
+    publish_rate: 30.0
+
+    width: 1280
+    height: 720
+    fps: 30.0
+    
+    camera_fx: 549.8351599620
+    camera_fy: 545.6222130545
+    camera_cx: 599.1912418111
+    camera_cy: 420.2722299780
+
+    dist_k1: 0.1255592953
+    dist_k2: -0.1963274373
+    dist_p1: -0.0012630831
+    dist_p2: -0.0034363489
+    dist_k3: 0.0630439860
+
+    exposure_auto: true
+    exposure: 100.0
+    gain: 0.0
+    brightness: 0.0
+    saturation: -1.0
+    contrast: -1.0
+
+    v4l2_exposure_mode_auto_value: 0.25
+    v4l2_exposure_mode_manual_value: 1.0

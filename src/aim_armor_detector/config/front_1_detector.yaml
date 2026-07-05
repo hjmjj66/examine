@@ -1,0 +1,29 @@
+/**:
+  ros__parameters:
+    # ---------- 前相机 #1(大恒工业相机) ----------
+    camera_name: "front_1"
+    enable_front_camera: true
+    front_image_topic: "/gx_camera_1/image_raw"
+    front_armor_topic: "/aim_detector/front_1/armor_sets"
+    front_visualization_topic: "/aim_detector/front_1/visualization"
+
+    # ---------- 后相机(USB摄像头) ----------
+    enable_back_camera: false
+    back_image_topic: "/usb_camera/image_raw"
+    back_armor_topic: "/aim_detector/back/armor_sets"
+    back_visualization_topic: "/aim_detector/back/visualization"
+
+    # ---------- 模型与推理参数 ----------
+    model_path: "/home/hustlyrm/sentry.aim/assets/0526_fp16.xml"
+    device_name: "GPU"
+    enemy_color: -2
+    enable_visualization: true
+    enable_pca_correction: true
+    pca.pass_optimize_lightbar_width: 5
+    pca.normalize_max_brightness: 25.0
+    pca.lightbar_min_mean_brightness: 35.0
+    pca.padding_scale: 0.10
+    pca.search_start_ratio: 0.35
+    pca.search_end_ratio: 0.65
+    pca.estimated_width_ratio: 0.16
+    pca.min_sample_width: 4

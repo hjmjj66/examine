@@ -1,0 +1,25 @@
+/**:
+  ros__parameters:
+    image_topic: "/gx_camera_0/image_raw"
+    camera_info_topic: "/gx_camera_0/camera_info"
+    gimbal_state_topic: "/ly/gimbal/angles"
+    debug_image_topic: "/aim_handeye/debug_image"
+    parent_frame_id: "gimbal_barrel"
+    child_frame_id: "gx_camera_0"
+    output_tf_section: "barrel_to_camera_0"
+    handeye_method: "tsai"
+    output_file: ""
+    use_camera_info_topic: false
+    angles_in_degree: true
+    board_cols: 11
+    board_rows: 8
+    min_samples: 8
+    square_size_m: 0.030
+    yaw_sign: 1.0
+    pitch_sign: -1.0
+    min_angle_delta_deg: 2.0
+    camera_matrix: [2594.8668197346, 0.0, 623.6194463792,
+                    0.0, 2593.9303479068, 487.9543574800,
+                    0.0, 0.0, 1.0]
+    distortion_coefficients: [0.0013295332, -0.3225360920, 0.0008215090,
+                               0.0001941072, 7.0936030151]
