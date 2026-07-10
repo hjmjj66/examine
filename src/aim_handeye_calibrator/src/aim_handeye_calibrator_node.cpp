@@ -205,9 +205,9 @@ AimHandeyeCalibratorNode::AimHandeyeCalibratorNode(const rclcpp::NodeOptions & o
       [this](const sensor_msgs::msg::CameraInfo::ConstSharedPtr msg) { onCameraInfo(msg); });
   }
 
-  gimbal_state_sub_ = create_subscription<sentry_gimbal::msg::GimbalAngles>(
+  gimbal_state_sub_ = create_subscription<gimbal_driver::msg::GimbalAngles>(
     gimbal_state_topic_, rclcpp::SensorDataQoS().keep_last(20),
-    [this](const sentry_gimbal::msg::GimbalAngles::ConstSharedPtr msg) { onGimbalState(msg); });
+    [this](const gimbal_driver::msg::GimbalAngles::ConstSharedPtr msg) { onGimbalState(msg); });
 
   debug_image_pub_ = create_publisher<sensor_msgs::msg::Image>(
     debug_image_topic_, rclcpp::SensorDataQoS());
@@ -272,7 +272,7 @@ void AimHandeyeCalibratorNode::onCameraInfo(const sensor_msgs::msg::CameraInfo::
   distortion_coefficients_ = distortion_coeffs;
 }
 
-void AimHandeyeCalibratorNode::onGimbalState(const sentry_gimbal::msg::GimbalAngles::ConstSharedPtr msg)
+void AimHandeyeCalibratorNode::onGimbalState(const gimbal_driver::msg::GimbalAngles::ConstSharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
   latest_gimbal_state_ = *msg;
@@ -284,7 +284,7 @@ void AimHandeyeCalibratorNode::handleCapture(
 {
   try {
     sensor_msgs::msg::Image::ConstSharedPtr image_msg;
-    std::optional<sentry_gimbal::msg::GimbalAngles> gimbal_state;
+    std::optional<gimbal_driver::msg::GimbalAngles> gimbal_state;
     cv::Mat camera_matrix;
     cv::Mat distortion_coefficients;
     std::size_t sample_count = 0;

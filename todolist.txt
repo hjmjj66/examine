@@ -154,3 +154,4 @@
 - [ ] 现在前哨站初始化逻辑，仍然是“把第一次看到的那块板当参考高度，再按 offset 推另外两层”
   这部分我之前已经单独看过代码了
   相比旧工程，这一版确实还可以继续优化
+- TODO: revisit aim_outpost_predictor yaw gate; measurement.ypr.x() vs gimbal_yaw may be too strict.

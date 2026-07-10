@@ -11,7 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(sentry_gimbal REQUIRED)
+find_package(gimbal_driver REQUIRED)
 #find_package(gimbal_driver REQUIRED)
 find_package(aim_target_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -31,7 +31,7 @@ ament_target_dependencies(armor_controller_node
   tf2
   tf2_ros
   geometry_msgs
-  sentry_gimbal
+  gimbal_driver
 #  gimbal_driver
   aim_target_msgs
   std_msgs

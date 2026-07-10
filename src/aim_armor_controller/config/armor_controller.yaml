@@ -7,7 +7,7 @@ armor_controller_node:
     selected_target_id_topic: /decider/selected_target_id
     aim_result_topic: /ly/aim/result
     gimbal_angles_topic: /ly/gimbal/angles
-    bullet_speed_topic: /ly/bullet/speed
+    bullet_speed_topic: /ly/game/bullet
     control_angles_topic: /ly/control/angles
     control_firecode_topic: /ly/control/firecode
     selected_armor_topic: /controller/selected_armor

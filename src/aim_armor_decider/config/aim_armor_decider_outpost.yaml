@@ -9,3 +9,4 @@ aim_armor_decider_node:
     selected_target_id_topic: /decider/selected_target_id
     select_target_timeout_sec: 0.5
     outpost_target_id: 6
+    default_select_outpost_when_no_external_target: false

@@ -135,9 +135,12 @@ std::vector<DetectionObject> OpenvinoInfer::postprocess(cv::Size image_size, int
     cv::minMaxLoc(color_scores, nullptr, &color_score, nullptr, &color_id);
     cv::minMaxLoc(class_scores, nullptr, &class_score, nullptr, &class_id);
 
+    // color_id 含义: 0=蓝方装甲板, 1=红方装甲板, 2/3=无效(丢弃)
     if (color_id.x == 2 || color_id.x == 3) {
       continue;
     }
+    // detect_color: 0=敌方为蓝方(打蓝色), 1=敌方为红方(打红色)
+    // 过滤掉非敌方颜色的装甲板
     if ((detect_color == 0 && color_id.x == 1) || (detect_color == 1 && color_id.x == 0)) {
       continue;
     }

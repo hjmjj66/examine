@@ -13,7 +13,6 @@
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/int32.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -30,7 +29,9 @@
 #include "aim_msgs/msg/outpost_state.hpp"
 #include "aim_msgs/msg/selected_target_id.hpp"
 #include "aim_msgs/msg/target_state_array.hpp"
-#include "sentry_gimbal/msg/gimbal_angles.hpp"
+#include "gimbal_driver/msg/bullet_info.hpp"
+#include "gimbal_driver/msg/fire_code.hpp"
+#include "gimbal_driver/msg/gimbal_angles.hpp"
 #include "aim_target_msgs/msg/aim_result.hpp"
 
 namespace
@@ -77,9 +78,22 @@ struct ActiveTarget
   bool valid{false};
 };
 
-struct ArmorCandidate
+gimbal_driver::msg::FireCode makeFireCodeMsg(const rclcpp::Time & stamp, std::uint8_t raw)
 {
-  double bx{0.0};
+  gimbal_driver::msg::FireCode msg;
+  msg.header.stamp = stamp;
+  msg.field_mask = gimbal_driver::msg::FireCode::FIELD_ALL;
+  msg.fire_status = static_cast<std::uint8_t>(raw & 0x03U);
+  msg.cap_state = static_cast<std::uint8_t>((raw >> 2U) & 0x03U);
+  msg.follow_mode = ((raw >> 4U) & 0x01U) != 0U;
+  msg.aim_mode = ((raw >> 5U) & 0x01U) != 0U;
+  msg.rotate = static_cast<std::uint8_t>((raw >> 6U) & 0x03U);
+  msg.raw = raw;
+  return msg;
+}
+
+struct ArmorCandidate
+{  double bx{0.0};
   double by{0.0};
   double bz{0.0};
   double pitch{0.0};
@@ -114,7 +128,7 @@ public:
       "selected_target_id_topic", "/decider/selected_target_id");
     declare_parameter<std::string>("aim_result_topic", "/ly/aim/result");
     declare_parameter<std::string>("gimbal_angles_topic", "/ly/gimbal/angles");
-    declare_parameter<std::string>("bullet_speed_topic", "/ly/bullet/speed");
+    declare_parameter<std::string>("bullet_speed_topic", "/ly/game/bullet");
     declare_parameter<std::string>("control_angles_topic", "/ly/control/angles");
     declare_parameter<std::string>("control_firecode_topic", "/ly/control/firecode");
     declare_parameter<std::string>("selected_armor_topic", "/controller/selected_armor");
@@ -240,9 +254,9 @@ public:
     debug_selected_armor_index_pub_ =
       create_publisher<std_msgs::msg::Int32>(debug_selected_armor_index_topic, 10);
     if (publish_legacy_control_topics_) {
-      angle_pub_ = create_publisher<sentry_gimbal::msg::GimbalAngles>(control_angles_topic, 10);
+      angle_pub_ = create_publisher<gimbal_driver::msg::GimbalAngles>(control_angles_topic, 10);
       if (!manual_fire_mode_) {
-        fire_pub_ = create_publisher<std_msgs::msg::UInt8>(control_firecode_topic, 10);
+        fire_pub_ = create_publisher<gimbal_driver::msg::FireCode>(control_firecode_topic, 10);
       }
     }
 
@@ -302,23 +316,24 @@ public:
         }
       });
 
-    gimbal_sub_ = create_subscription<sentry_gimbal::msg::GimbalAngles>(
+    gimbal_sub_ = create_subscription<gimbal_driver::msg::GimbalAngles>(
       gimbal_topic, 10,
-      [this](const sentry_gimbal::msg::GimbalAngles::SharedPtr msg) {
+      [this](const gimbal_driver::msg::GimbalAngles::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         gimbal_state_.yaw_deg = msg->yaw;
         gimbal_state_.pitch_deg = msg->pitch;
         gimbal_state_.valid = true;
       });
-    bullet_sub_ = create_subscription<std_msgs::msg::Float32>(
+    bullet_sub_ = create_subscription<gimbal_driver::msg::BulletInfo>(
       bullet_topic, 10,
-      [this](const std_msgs::msg::Float32::SharedPtr msg) {
-        if (msg->data > min_bullet_speed_) {
+      [this](const gimbal_driver::msg::BulletInfo::SharedPtr msg) {
+        if (msg->has_initial_speed && msg->initial_speed > min_bullet_speed_) {
           if (bullet_speed_ <= 0.0) {
-            bullet_speed_ = msg->data;
+            bullet_speed_ = msg->initial_speed;
           } else {
             bullet_speed_ =
-              msg->data * bullet_speed_alpha_ + (1.0 - bullet_speed_alpha_) * bullet_speed_;
+              msg->initial_speed * bullet_speed_alpha_ +
+              (1.0 - bullet_speed_alpha_) * bullet_speed_;
           }
         }
       });
@@ -484,16 +499,14 @@ private:
     aim_result_pub_->publish(aim_msg);
 
     if (publish_legacy_control_topics_ && angle_pub_) {
-      sentry_gimbal::msg::GimbalAngles angle_msg;
+      gimbal_driver::msg::GimbalAngles angle_msg;
       angle_msg.yaw = gimbal.yaw_deg;
       angle_msg.pitch = gimbal.pitch_deg;
       angle_pub_->publish(angle_msg);
     }
 
     if (publish_legacy_control_topics_ && !manual_fire_mode_ && fire_pub_) {
-      std_msgs::msg::UInt8 fire_msg;
-      fire_msg.data = last_firecode_out_;
-      fire_pub_->publish(fire_msg);
+      fire_pub_->publish(makeFireCodeMsg(now(), last_firecode_out_));
     }
   }
 
@@ -926,7 +939,7 @@ private:
       fire_control_input, legacy_fire_control_state_);
 
     if (publish_legacy_control_topics_ && angle_pub_) {
-      sentry_gimbal::msg::GimbalAngles angle_msg;
+      gimbal_driver::msg::GimbalAngles angle_msg;
       angle_msg.yaw = static_cast<float>(selected.yaw_actual_want_deg);
       angle_msg.pitch = static_cast<float>(selected.pitch_actual_want_deg);
       angle_pub_->publish(angle_msg);
@@ -951,9 +964,7 @@ private:
     aim_result_pub_->publish(aim_msg);
 
     if (publish_legacy_control_topics_ && !manual_fire_mode_ && fire_pub_) {
-      std_msgs::msg::UInt8 fire_msg;
-      fire_msg.data = last_firecode_out_;
-      fire_pub_->publish(fire_msg);
+      fire_pub_->publish(makeFireCodeMsg(now(), last_firecode_out_));
     }
   }
 
@@ -1012,15 +1023,15 @@ private:
   rclcpp::Publisher<aim_msgs::msg::Armor>::SharedPtr selected_armor_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr debug_target_point_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr debug_selected_armor_index_pub_;
-  rclcpp::Publisher<sentry_gimbal::msg::GimbalAngles>::SharedPtr angle_pub_;
-  rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr fire_pub_;
+  rclcpp::Publisher<gimbal_driver::msg::GimbalAngles>::SharedPtr angle_pub_;
+  rclcpp::Publisher<gimbal_driver::msg::FireCode>::SharedPtr fire_pub_;
   rclcpp::Subscription<aim_msgs::msg::TargetStateArray>::SharedPtr front_0_sub_;
   rclcpp::Subscription<aim_msgs::msg::TargetStateArray>::SharedPtr front_1_sub_;
   rclcpp::Subscription<aim_msgs::msg::TargetStateArray>::SharedPtr back_sub_;
   rclcpp::Subscription<aim_msgs::msg::OutpostState>::SharedPtr outpost_sub_;
   rclcpp::Subscription<aim_msgs::msg::SelectedTargetId>::SharedPtr selected_target_sub_;
-  rclcpp::Subscription<sentry_gimbal::msg::GimbalAngles>::SharedPtr gimbal_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr bullet_sub_;
+  rclcpp::Subscription<gimbal_driver::msg::GimbalAngles>::SharedPtr gimbal_sub_;
+  rclcpp::Subscription<gimbal_driver::msg::BulletInfo>::SharedPtr bullet_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;

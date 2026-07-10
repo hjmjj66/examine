@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 project(aim_solver)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES  Clang)
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
@@ -24,6 +24,7 @@ add_executable(aim_solver_node
 target_compile_features(aim_solver_node PUBLIC cxx_std_17)
 target_include_directories(aim_solver_node PRIVATE
   include
+  /usr/include/opencv4
 )
 
 ament_target_dependencies(aim_solver_node
@@ -56,7 +57,22 @@ install(DIRECTORY config
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+
+  ament_add_gtest(test_coordinate_utils
+    test/test_coordinate_utils.cpp
+  )
+  if(TARGET test_coordinate_utils)
+    target_include_directories(test_coordinate_utils PRIVATE
+      include
+      /usr/include/opencv4
+    )
+    target_link_libraries(test_coordinate_utils
+      ${OpenCV_LIBS}
+    )
+  endif()
+
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()

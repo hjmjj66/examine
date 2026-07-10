@@ -1,4 +1,5 @@
 ﻿#include "aim_solver/aim_solver_node.hpp"
+#include "aim_solver/coordinate_utils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -456,19 +457,25 @@ bool AimSolverNode::solveArmorPose(
   }
 
   const cv::Mat & tvec = pnp_result.tvecs.front();
-  pose_msg.position.x = tvec.at<double>(0);
-  pose_msg.position.y = tvec.at<double>(1);
-  pose_msg.position.z = tvec.at<double>(2);
+  const cv::Vec3d optical_position(
+    tvec.at<double>(0),
+    tvec.at<double>(1),
+    tvec.at<double>(2));
+  const cv::Vec3d camera_position = opticalPointToCameraFrame(optical_position);
+  pose_msg.position.x = camera_position[0];
+  pose_msg.position.y = camera_position[1];
+  pose_msg.position.z = camera_position[2];
 
   cv::Mat rotation_cv;
   cv::Rodrigues(pnp_result.rvecs.front(), rotation_cv);
-  cv::Matx33d rotation;
+  cv::Matx33d optical_rotation;
   for (int row = 0; row < 3; ++row) {
     for (int col = 0; col < 3; ++col) {
-      rotation(row, col) = rotation_cv.at<double>(row, col);
+      optical_rotation(row, col) = rotation_cv.at<double>(row, col);
     }
   }
-  pose_msg.orientation = rotationMatrixToQuaternion(rotation);
+  pose_msg.orientation = rotationMatrixToQuaternion(
+    opticalRotationToCameraFrame(optical_rotation));
   return true;
 }
 
@@ -741,14 +748,10 @@ void AimSolverNode::sortPnPResult(
     }
   }
 
-  const cv::Matx33d rotation_camera_to_ros(
-    0.0, 0.0, 1.0,
-    -1.0, 0.0, 0.0,
-    0.0, -1.0, 0.0);
   const cv::Vec3d rpy0 = rotationMatrixToRPY(
-    rotation_camera_to_ros * rotation0);
+    opticalRotationToCameraFrame(rotation0));
   const cv::Vec3d rpy1 = rotationMatrixToRPY(
-    rotation_camera_to_ros * rotation1);
+    opticalRotationToCameraFrame(rotation1));
 
   const double roll0 = radianToAngle(limitRadian(
       rpy0[0], {-1.5707963267948966, 1.5707963267948966}));
@@ -821,11 +824,14 @@ std::vector<cv::Point2f> AimSolverNode::reprojectArmor(
     target_position.x, target_position.y, target_position.z);
   const cv::Vec3d target_camera =
     rotation_world_to_camera * target_world + translation_world_to_camera;
+  const cv::Matx33d rotation_armor_to_optical =
+    cameraRotationToOpticalFrame(rotation_armor_to_camera);
+  const cv::Vec3d target_optical = cameraPointToOpticalFrame(target_camera);
 
   cv::Mat rotation_cv(3, 3, CV_64F);
   for (int row = 0; row < 3; ++row) {
     for (int col = 0; col < 3; ++col) {
-      rotation_cv.at<double>(row, col) = rotation_armor_to_camera(row, col);
+      rotation_cv.at<double>(row, col) = rotation_armor_to_optical(row, col);
     }
   }
 
@@ -833,7 +839,7 @@ std::vector<cv::Point2f> AimSolverNode::reprojectArmor(
   cv::Rodrigues(rotation_cv, rvec);
   std::vector<cv::Point2f> image_points;
   cv::projectPoints(
-    object_points, rvec, target_camera,
+    object_points, rvec, target_optical,
     camera_matrix, distortion_coefficients, image_points);
   return image_points;
 }

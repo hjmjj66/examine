@@ -35,11 +35,11 @@ barrel_to_camera_1:
   child_frame: "gx_camera_1"
 
 small_yaw_to_usb_camera:
-  x: -0.2
-  y: 0.0
-  z: 0.0
-  yaw: 1.58
-  pitch: 0.0173
-  roll: -1.4974
+  x: 0.00962876
+  y: -0.02525703
+  z: 0.00000000
+  yaw: 2.07307474
+  pitch: 0.00456172
+  roll: -0.00648023
   parent_frame: "gimbal_small_yaw"
   child_frame: "usb_camera"

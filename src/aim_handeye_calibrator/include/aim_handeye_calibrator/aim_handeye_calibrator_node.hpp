@@ -11,7 +11,7 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
-#include "sentry_gimbal/msg/gimbal_angles.hpp"
+#include "gimbal_driver/msg/gimbal_angles.hpp"
 
 namespace aim_handeye_calibrator
 {
@@ -44,7 +44,7 @@ private:
 
   void onImage(const sensor_msgs::msg::Image::ConstSharedPtr msg);
   void onCameraInfo(const sensor_msgs::msg::CameraInfo::ConstSharedPtr msg);
-  void onGimbalState(const sentry_gimbal::msg::GimbalAngles::ConstSharedPtr msg);
+  void onGimbalState(const gimbal_driver::msg::GimbalAngles::ConstSharedPtr msg);
 
   void handleCapture(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
@@ -81,7 +81,7 @@ private:
 
   mutable std::mutex mutex_;
   sensor_msgs::msg::Image::ConstSharedPtr latest_image_;
-  std::optional<sentry_gimbal::msg::GimbalAngles> latest_gimbal_state_;
+  std::optional<gimbal_driver::msg::GimbalAngles> latest_gimbal_state_;
   cv::Mat camera_matrix_;
   cv::Mat distortion_coefficients_;
   std::vector<Sample> samples_;
@@ -107,7 +107,7 @@ private:
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
-  rclcpp::Subscription<sentry_gimbal::msg::GimbalAngles>::SharedPtr gimbal_state_sub_;
+  rclcpp::Subscription<gimbal_driver::msg::GimbalAngles>::SharedPtr gimbal_state_sub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_image_pub_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr capture_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr solve_service_;

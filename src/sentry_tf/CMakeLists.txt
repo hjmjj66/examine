@@ -11,7 +11,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(sentry_gimbal REQUIRED)
+find_package(gimbal_driver REQUIRED)
 #find_package(gimbal_driver REQUIRED)
 
 add_executable(tf_node src/tf_node.cpp)
@@ -26,7 +26,7 @@ ament_target_dependencies(tf_node
   tf2_ros
   geometry_msgs
   std_msgs
-  sentry_gimbal
+  gimbal_driver
   #gimbal_driver
 )
 

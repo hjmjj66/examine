@@ -8,7 +8,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
-#include "sentry_gimbal/msg/gimbal_angles.hpp"
+#include "gimbal_driver/msg/gimbal_angles.hpp"
 
 namespace
 {
@@ -37,10 +37,10 @@ public:
     static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
     publishBarrelOffsetStatic();
     
-    gimbal_sub_ = create_subscription<sentry_gimbal::msg::GimbalAngles>(
+    gimbal_sub_ = create_subscription<gimbal_driver::msg::GimbalAngles>(
       gimbal_topic,
       rclcpp::SensorDataQoS(),
-      [this](const sentry_gimbal::msg::GimbalAngles::SharedPtr msg) {
+      [this](const gimbal_driver::msg::GimbalAngles::SharedPtr msg) {
         BroadcastGimbalTf(*msg);
       });
 
@@ -70,7 +70,7 @@ private:
     static_tf_broadcaster_->sendTransform(s);
   }
 
-  void BroadcastGimbalTf(const sentry_gimbal::msg::GimbalAngles & msg)
+  void BroadcastGimbalTf(const gimbal_driver::msg::GimbalAngles & msg)
   {
     const double yaw_rad = static_cast<double>(msg.yaw) * M_PI / 180.0;
     const double pitch_rad = -static_cast<double>(msg.pitch) * M_PI / 180.0;
@@ -116,7 +116,7 @@ private:
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::unique_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
-  rclcpp::Subscription<sentry_gimbal::msg::GimbalAngles>::SharedPtr gimbal_sub_;
+  rclcpp::Subscription<gimbal_driver::msg::GimbalAngles>::SharedPtr gimbal_sub_;
   std::string world_frame_;
   std::string yaw_frame_;
   std::string barrel_joint_frame_;

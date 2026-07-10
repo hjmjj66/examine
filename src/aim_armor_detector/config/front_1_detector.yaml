@@ -16,6 +16,7 @@
     # ---------- 模型与推理参数 ----------
     model_path: "/home/hustlyrm/sentry.aim/assets/0526_fp16.xml"
     device_name: "GPU"
+    # enemy_color: -2=双方都打, 0=敌方为蓝方(打蓝色装甲板), 1=敌方为红方(打红色装甲板)
     enemy_color: -2
     enable_visualization: true
     enable_pca_correction: true

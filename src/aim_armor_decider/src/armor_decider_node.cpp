@@ -114,6 +114,7 @@ public:
       "selected_target_id_topic", "/decider/selected_target_id");
     declare_parameter<double>("select_target_timeout_sec", 0.5);
     declare_parameter<int>("outpost_target_id", 6);
+    declare_parameter<bool>("default_select_outpost_when_no_external_target", false);
 
     const auto front_0_topic = get_parameter("front_0_target_states_topic").as_string();
     const auto front_1_topic = get_parameter("front_1_target_states_topic").as_string();
@@ -125,6 +126,8 @@ public:
       get_parameter("selected_target_id_topic").as_string();
     select_target_timeout_sec_ = get_parameter("select_target_timeout_sec").as_double();
     outpost_target_id_ = static_cast<uint8_t>(get_parameter("outpost_target_id").as_int());
+    default_select_outpost_when_no_external_target_ =
+      get_parameter("default_select_outpost_when_no_external_target").as_bool();
 
     targets_pub_ = create_publisher<aim_target_msgs::msg::AimTargetArray>(
       armor_targets_topic, rclcpp::SensorDataQoS());
@@ -150,10 +153,11 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "aim_armor_decider_node started. front_0=%s front_1=%s back=%s outpost=%s targets=%s "
-      "select=%s selected_target_id=%s outpost_id=%d",
+      "select=%s selected_target_id=%s outpost_id=%d auto_outpost=%s",
       front_0_topic.c_str(), front_1_topic.c_str(), back_topic.c_str(),
       outpost_state_topic_.c_str(), armor_targets_topic.c_str(), select_target_topic.c_str(),
-      selected_target_id_topic.c_str(), outpost_target_id_);
+      selected_target_id_topic.c_str(), outpost_target_id_,
+      default_select_outpost_when_no_external_target_ ? "true" : "false");
   }
 
 private:
@@ -163,16 +167,8 @@ private:
       return;
     }
 
-    aim_msgs::msg::SelectedTargetId selected_target_msg;
-    selected_target_msg.header.stamp = now();
-    selected_target_msg.id = msg->id;
-    selected_target_msg.valid = true;
-    selected_target_id_pub_->publish(selected_target_msg);
-
     std::lock_guard<std::mutex> lock(data_mutex_);
-    selected_target_id_ = msg->id;
-    selected_target_updated_at_ = now();
-    has_selected_target_ = true;
+    publishSelectedTargetId(msg->id);
     processLatestLocked();
   }
 
@@ -214,7 +210,8 @@ private:
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     latest_outpost_ = msg;
-    if (selectTargetFresh() && selected_target_id_ == outpost_target_id_) {
+    if ((selectTargetFresh() && selected_target_id_ == outpost_target_id_) ||
+        (!selectTargetFresh() && default_select_outpost_when_no_external_target_)) {
       processLatestLocked();
     }
   }
@@ -290,6 +287,32 @@ private:
     targets_pub_->publish(targets);
   }
 
+  void publishSelectedTargetId(uint8_t id)
+  {
+    aim_msgs::msg::SelectedTargetId selected_target_msg;
+    selected_target_msg.header.stamp = now();
+    selected_target_msg.id = id;
+    selected_target_msg.valid = true;
+    selected_target_id_pub_->publish(selected_target_msg);
+
+    selected_target_id_ = id;
+    selected_target_updated_at_ = now();
+    has_selected_target_ = true;
+  }
+
+  std::optional<TargetCandidate> defaultOutpostCandidate() const
+  {
+    if (!default_select_outpost_when_no_external_target_ || !latest_outpost_) {
+      return std::nullopt;
+    }
+
+    const auto candidate = fromOutpostState(*latest_outpost_);
+    if (!candidate.tracking || !candidate.converged) {
+      return std::nullopt;
+    }
+    return candidate;
+  }
+
   const TargetCandidate * selectCandidate(const std::vector<TargetCandidate> & candidates) const
   {
     if (candidates.empty()) {
@@ -319,19 +342,35 @@ private:
       }
     }
 
+    const auto default_outpost_candidate =
+      !selectTargetFresh() ? defaultOutpostCandidate() : std::nullopt;
+
     auto front_candidates = collectFrontCandidates();
+    if (default_outpost_candidate.has_value()) {
+      front_candidates.push_back(*default_outpost_candidate);
+    }
+
     if (!front_candidates.empty()) {
       const auto header =
-        latest_front_0_ ? latest_front_0_->header : latest_front_1_->header;
+        latest_front_0_ ? latest_front_0_->header :
+        (latest_front_1_ ? latest_front_1_->header : latest_outpost_->header);
       publishArmorTargets(header, front_candidates);
-      (void)selectCandidate(front_candidates);
+      if (!selectTargetFresh()) {
+        if (const auto * candidate = selectCandidate(front_candidates)) {
+          publishSelectedTargetId(candidate->id);
+        }
+      }
       return;
     }
 
     auto back_candidates = collectBackCandidates();
     if (!back_candidates.empty() && latest_back_) {
       publishArmorTargets(latest_back_->header, back_candidates);
-      (void)selectCandidate(back_candidates);
+      if (!selectTargetFresh()) {
+        if (const auto * candidate = selectCandidate(back_candidates)) {
+          publishSelectedTargetId(candidate->id);
+        }
+      }
     }
   }
 
@@ -339,6 +378,7 @@ private:
   uint8_t selected_target_id_{0};
   rclcpp::Time selected_target_updated_at_{0, 0, RCL_ROS_TIME};
   double select_target_timeout_sec_{0.5};
+  bool default_select_outpost_when_no_external_target_{false};
 
   std::mutex data_mutex_;
   aim_msgs::msg::TargetStateArray::ConstSharedPtr latest_front_0_;

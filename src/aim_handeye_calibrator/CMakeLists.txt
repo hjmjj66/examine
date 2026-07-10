@@ -12,7 +12,7 @@ find_package(OpenCV REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
-find_package(sentry_gimbal REQUIRED)
+find_package(gimbal_driver REQUIRED)
 
 add_executable(aim_handeye_calibrator_node
   src/aim_handeye_calibrator_node.cpp
@@ -38,7 +38,7 @@ ament_target_dependencies(aim_handeye_calibrator_node
   rclcpp
   sensor_msgs
   std_srvs
-  sentry_gimbal
+  gimbal_driver
 )
 
 ament_target_dependencies(aim_camera_intrinsic_calibrator_node
