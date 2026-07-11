@@ -8,6 +8,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@
 
 #include "aim_msgs/msg/armor_pose_set_array.hpp"
 #include "aim_msgs/msg/outpost_state.hpp"
+#include "aim_outpost_predictor/front_camera_arbitrator.hpp"
 
 namespace aim_outpost_predictor
 {
@@ -159,7 +161,14 @@ private:
     ExtendedKalmanFilter ekf_;
   };
 
-  void onArmorPoseSets(const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
+  void onArmorPoseSets(
+    bool from_front_0,
+    const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
+  std::vector<ArmorMeasurement> extractMeasurements(
+    const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr & msg);
+  void processArmorPoseSets(
+    const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr & msg,
+    std::vector<ArmorMeasurement> measurements);
   void publishVisualization(
     const std_msgs::msg::Header & header,
     const aim_msgs::msg::OutpostState & state_msg);
@@ -175,13 +184,15 @@ private:
     const geometry_msgs::msg::Pose & pose,
     double distance);
 
-  rclcpp::Subscription<aim_msgs::msg::ArmorPoseSetArray>::SharedPtr armor_pose_sub_;
+  rclcpp::Subscription<aim_msgs::msg::ArmorPoseSetArray>::SharedPtr front_0_armor_pose_sub_;
+  rclcpp::Subscription<aim_msgs::msg::ArmorPoseSetArray>::SharedPtr front_1_armor_pose_sub_;
   rclcpp::Publisher<aim_msgs::msg::OutpostState>::SharedPtr outpost_state_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr visualization_pub_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  std::string armor_pose_set_topic_;
+  std::string front_0_armor_pose_set_topic_;
+  std::string front_1_armor_pose_set_topic_;
   std::string outpost_state_topic_;
   std::string visualization_topic_;
   std::string world_frame_id_;
@@ -193,8 +204,11 @@ private:
   int max_lost_count_{75};
   int min_consecutive_detections_to_track_{1};
   double max_nis_failure_ratio_{0.4};
+  double front_0_fallback_timeout_sec_{0.2};
   TrackerConfig tracker_config_;
   OutpostTracker tracker_;
+  FrontCameraArbitrator front_camera_arbitrator_;
+  std::mutex tracker_mutex_;
   int consecutive_detection_count_{0};
   int last_marker_count_{0};
   int last_selected_marker_count_{0};

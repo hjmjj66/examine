@@ -50,6 +50,12 @@ install(DIRECTORY config
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_front_camera_arbitrator test/test_front_camera_arbitrator.cpp)
+  if(TARGET test_front_camera_arbitrator)
+    target_include_directories(test_front_camera_arbitrator PRIVATE include)
+  endif()
+
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

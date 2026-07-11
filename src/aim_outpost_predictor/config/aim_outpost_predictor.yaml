@@ -1,6 +1,8 @@
 aim_outpost_predictor_node:
   ros__parameters:
-    armor_pose_set_topic: "/aim_solver/front_0/armor_pose_sets"
+    front_0_armor_pose_set_topic: "/aim_solver/front_0/armor_pose_sets"
+    front_1_armor_pose_set_topic: "/aim_solver/front_1/armor_pose_sets"
+    front_0_fallback_timeout_sec: 0.2
     outpost_state_topic: "/aim_outpost_predictor/outpost_state"
     enable_visualization: true
     visualization_topic: "/aim_outpost_predictor/visualization"

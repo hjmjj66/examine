@@ -606,7 +606,9 @@ std::vector<Eigen::Vector4d> AimOutpostPredictorNode::OutpostTracker::predictedA
 AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & options)
 : Node("aim_outpost_predictor_node", options)
 {
-  declare_parameter<std::string>("armor_pose_set_topic", "/aim_solver/front_0/armor_pose_sets");
+  declare_parameter<std::string>("front_0_armor_pose_set_topic", "/aim_solver/front_0/armor_pose_sets");
+  declare_parameter<std::string>("front_1_armor_pose_set_topic", "/aim_solver/front_1/armor_pose_sets");
+  declare_parameter<double>("front_0_fallback_timeout_sec", 0.2);
   declare_parameter<std::string>("outpost_state_topic", "/aim_outpost_predictor/outpost_state");
   declare_parameter<bool>("enable_visualization", false);
   declare_parameter<std::string>("visualization_topic", "/aim_outpost_predictor/visualization");
@@ -641,7 +643,12 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
   declare_parameter<double>("fast_reanchor_cost", tracker_config_.fast_reanchor_cost);
   declare_parameter<int>("fast_reanchor_frames", tracker_config_.fast_reanchor_frames);
 
-  armor_pose_set_topic_ = get_parameter("armor_pose_set_topic").as_string();
+  front_0_armor_pose_set_topic_ =
+    get_parameter("front_0_armor_pose_set_topic").as_string();
+  front_1_armor_pose_set_topic_ =
+    get_parameter("front_1_armor_pose_set_topic").as_string();
+  front_0_fallback_timeout_sec_ = std::max(
+    0.0, get_parameter("front_0_fallback_timeout_sec").as_double());
   outpost_state_topic_ = get_parameter("outpost_state_topic").as_string();
   enable_visualization_ = get_parameter("enable_visualization").as_bool();
   visualization_topic_ = get_parameter("visualization_topic").as_string();
@@ -680,6 +687,7 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
   tracker_config_.fast_reanchor_frames = get_parameter("fast_reanchor_frames").as_int();
 
   tracker_.setConfig(tracker_config_);
+  front_camera_arbitrator_.setFallbackTimeout(front_0_fallback_timeout_sec_);
 
   const auto high_rate_qos = makeHighRateQos();
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
@@ -691,14 +699,42 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
     visualization_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
       visualization_topic_, rclcpp::SensorDataQoS());
   }
-  armor_pose_sub_ = create_subscription<aim_msgs::msg::ArmorPoseSetArray>(
-    armor_pose_set_topic_,
+  front_0_armor_pose_sub_ = create_subscription<aim_msgs::msg::ArmorPoseSetArray>(
+    front_0_armor_pose_set_topic_,
     high_rate_qos,
-    [this](const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg) { onArmorPoseSets(msg); });
+    [this](const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg) {
+      onArmorPoseSets(true, msg);
+    });
+  front_1_armor_pose_sub_ = create_subscription<aim_msgs::msg::ArmorPoseSetArray>(
+    front_1_armor_pose_set_topic_,
+    high_rate_qos,
+    [this](const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg) {
+      onArmorPoseSets(false, msg);
+    });
 }
 
 void AimOutpostPredictorNode::onArmorPoseSets(
+  bool from_front_0,
   const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
+{
+  std::vector<ArmorMeasurement> measurements = extractMeasurements(msg);
+  const auto now = std::chrono::steady_clock::now();
+  std::lock_guard<std::mutex> lock(tracker_mutex_);
+
+  if (from_front_0) {
+    if (!front_camera_arbitrator_.shouldProcessFront0(!measurements.empty(), now)) {
+      return;
+    }
+  } else if (!front_camera_arbitrator_.shouldProcessFront1(now)) {
+    return;
+  }
+
+  processArmorPoseSets(msg, std::move(measurements));
+}
+
+std::vector<AimOutpostPredictorNode::ArmorMeasurement>
+AimOutpostPredictorNode::extractMeasurements(
+  const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr & msg)
 {
   std::vector<ArmorMeasurement> measurements;
   const std::optional<double> gimbal_yaw = lookupGimbalYaw(msg->header);
@@ -722,6 +758,14 @@ void AimOutpostPredictorNode::onArmorPoseSets(
       measurements.push_back(measurement);
     }
   }
+
+  return measurements;
+}
+
+void AimOutpostPredictorNode::processArmorPoseSets(
+  const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr & msg,
+  std::vector<ArmorMeasurement> measurements)
+{
 
   const rclcpp::Time stamp(msg->header.stamp);
   tracker_.setConfig(tracker_config_);
