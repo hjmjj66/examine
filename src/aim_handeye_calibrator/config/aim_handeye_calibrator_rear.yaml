@@ -11,6 +11,8 @@
     output_file: ""
     use_camera_info_topic: false
     use_pitch: false
+    # Rear camera is attached to the yaw stage and does not use pitch offset.
+    barrel_offset_z: 0.0
     angles_in_degree: true
     board_cols: 11
     board_rows: 8

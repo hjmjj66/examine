@@ -21,7 +21,9 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include "aim_armor_controller/control_time_alignment.hpp"
 #include "aim_armor_controller/legacy_fire_control.hpp"
+#include "aim_armor_controller/outpost_tracking_hold.hpp"
 #include "aim_armor_controller/legacy_target_model.hpp"
 #include "aim_armor_controller/legacy_timing.hpp"
 #include "aim_armor_controller/target_state_selection.hpp"
@@ -32,7 +34,7 @@
 #include "gimbal_driver/msg/bullet_info.hpp"
 #include "gimbal_driver/msg/fire_code.hpp"
 #include "gimbal_driver/msg/gimbal_angles.hpp"
-#include "aim_target_msgs/msg/aim_result.hpp"
+#include "sentry_msgs/msg/aim_result.hpp"
 
 namespace
 {
@@ -43,10 +45,16 @@ constexpr double kCd = 0.42;
 constexpr double kRho = 1.169;
 constexpr std::uint8_t kDefaultOutpostId = 6;
 
+rclcpp::QoS makeRealtimeSensorQos()
+{
+  return rclcpp::SensorDataQoS().keep_last(1);
+}
+
 struct GimbalState
 {
   float yaw_deg{0.0F};
   float pitch_deg{0.0F};
+  builtin_interfaces::msg::Time stamp;
   bool valid{false};
 };
 
@@ -75,6 +83,7 @@ struct ActiveTarget
   std::string source_frame{"gimbal_world"};
   double measurement_age_sec{0.0};
   bool is_outpost{false};
+  bool tracking_hold{false};
   bool valid{false};
 };
 
@@ -152,6 +161,7 @@ public:
     declare_parameter<std::string>("barrel_joint_frame", "gimbal_barrel_joint");
     declare_parameter<double>("target_tf_timeout_sec", 0.02);
     declare_parameter<double>("target_msg_timeout_sec", 0.10);
+    declare_parameter<double>("outpost_tracking_hold_sec", 0.15);
     declare_parameter<double>("armor_select_area_weight", 1.0);
     declare_parameter<double>("armor_select_angle_weight", 1.0);
     declare_parameter<bool>("include_processing_delay", true);
@@ -215,6 +225,7 @@ public:
     barrel_joint_frame_ = get_parameter("barrel_joint_frame").as_string();
     target_tf_timeout_sec_ = get_parameter("target_tf_timeout_sec").as_double();
     target_msg_timeout_sec_ = get_parameter("target_msg_timeout_sec").as_double();
+    outpost_tracking_hold_sec_ = get_parameter("outpost_tracking_hold_sec").as_double();
     armor_select_area_weight_ = get_parameter("armor_select_area_weight").as_double();
     armor_select_angle_weight_ = get_parameter("armor_select_angle_weight").as_double();
     include_processing_delay_ = get_parameter("include_processing_delay").as_bool();
@@ -246,7 +257,7 @@ public:
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
 
-    aim_result_pub_ = create_publisher<aim_target_msgs::msg::AimResult>(aim_result_topic, 10);
+    aim_result_pub_ = create_publisher<sentry_msgs::msg::AimResult>(aim_result_topic, 10);
     selected_armor_pub_ =
       create_publisher<aim_msgs::msg::Armor>(selected_armor_topic, rclcpp::SensorDataQoS());
     debug_target_point_pub_ =
@@ -316,16 +327,19 @@ public:
         }
       });
 
+    const auto realtime_sensor_qos = makeRealtimeSensorQos();
+
     gimbal_sub_ = create_subscription<gimbal_driver::msg::GimbalAngles>(
-      gimbal_topic, 10,
+      gimbal_topic, realtime_sensor_qos,
       [this](const gimbal_driver::msg::GimbalAngles::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         gimbal_state_.yaw_deg = msg->yaw;
         gimbal_state_.pitch_deg = msg->pitch;
+        gimbal_state_.stamp = msg->header.stamp;
         gimbal_state_.valid = true;
       });
     bullet_sub_ = create_subscription<gimbal_driver::msg::BulletInfo>(
-      bullet_topic, 10,
+      bullet_topic, realtime_sensor_qos,
       [this](const gimbal_driver::msg::BulletInfo::SharedPtr msg) {
         if (msg->has_initial_speed && msg->initial_speed > min_bullet_speed_) {
           if (bullet_speed_ <= 0.0) {
@@ -490,9 +504,13 @@ private:
 
   void publishFallback(const GimbalState & gimbal)
   {
-    aim_target_msgs::msg::AimResult aim_msg;
-    aim_msg.header.stamp = now();
+    const rclcpp::Time stamp =
+      aim_armor_controller::resolveControlStamp(gimbal.stamp, now());
+
+    sentry_msgs::msg::AimResult aim_msg;
+    aim_msg.header.stamp = stamp;
     aim_msg.header.frame_id = barrel_joint_frame_;
+    aim_msg.follow = false;
     aim_msg.fire = false;
     aim_msg.yaw = gimbal.yaw_deg;
     aim_msg.pitch = gimbal.pitch_deg;
@@ -500,6 +518,7 @@ private:
 
     if (publish_legacy_control_topics_ && angle_pub_) {
       gimbal_driver::msg::GimbalAngles angle_msg;
+      angle_msg.header.stamp = stamp;
       angle_msg.yaw = gimbal.yaw_deg;
       angle_msg.pitch = gimbal.pitch_deg;
       angle_pub_->publish(angle_msg);
@@ -515,33 +534,16 @@ private:
     double & x, double & y, double & z, const rclcpp::Time & stamp)
   {
     geometry_msgs::msg::TransformStamped tf_msg;
-    bool got_tf = false;
-    std::string fallback_reason;
     try {
       tf_msg = tf_buffer_->lookupTransform(
         barrel_joint_frame_, source_frame, stamp,
         rclcpp::Duration::from_seconds(target_tf_timeout_sec_));
-      got_tf = true;
     } catch (const tf2::TransformException & e) {
-      fallback_reason = e.what();
-    }
-
-    if (!got_tf) {
       RCLCPP_WARN_THROTTLE(
-        get_logger(), *get_clock(), 2000,
-        "target tf lookup at stamp failed (%s -> %s): %s; falling back to latest TF",
-        source_frame.c_str(), barrel_joint_frame_.c_str(), fallback_reason.c_str());
-      try {
-        tf_msg = tf_buffer_->lookupTransform(
-          barrel_joint_frame_, source_frame, rclcpp::Time(0, 0, RCL_ROS_TIME),
-          rclcpp::Duration::from_seconds(target_tf_timeout_sec_));
-      } catch (const tf2::TransformException & e) {
-        RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 1000,
-          "target tf lookup failed (%s -> %s): %s",
-          source_frame.c_str(), barrel_joint_frame_.c_str(), e.what());
-        return false;
-      }
+        get_logger(), *get_clock(), 1000,
+        "control-time TF lookup failed (%s -> %s at %.9f): %s",
+        source_frame.c_str(), barrel_joint_frame_.c_str(), stamp.seconds(), e.what());
+      return false;
     }
 
     const tf2::Quaternion q(
@@ -567,20 +569,22 @@ private:
     return header.frame_id.empty() ? std::string("gimbal_world") : header.frame_id;
   }
 
-  bool isTimedOut(const builtin_interfaces::msg::Time & stamp) const
+  bool isTimedOut(
+    const builtin_interfaces::msg::Time & stamp,
+    const rclcpp::Time & control_stamp) const
   {
     if (target_msg_timeout_sec_ <= 0.0 || aim_armor_controller::isZeroStamp(stamp)) {
       return false;
     }
-    return (now() - rclcpp::Time(stamp)).seconds() > target_msg_timeout_sec_;
+    return aim_armor_controller::ageAtControlStamp(stamp, control_stamp) >
+           target_msg_timeout_sec_;
   }
 
-  double measurementAgeFromStamp(const builtin_interfaces::msg::Time & stamp) const
+  double measurementAgeFromStamp(
+    const builtin_interfaces::msg::Time & stamp,
+    const rclcpp::Time & control_stamp) const
   {
-    if (aim_armor_controller::isZeroStamp(stamp)) {
-      return 0.0;
-    }
-    return std::max(0.0, (now() - rclcpp::Time(stamp)).seconds());
+    return aim_armor_controller::ageAtControlStamp(stamp, control_stamp);
   }
 
   ActiveTarget resolveActiveTarget(
@@ -588,7 +592,8 @@ private:
     const TargetStateArrayCache & front_0,
     const TargetStateArrayCache & front_1,
     const TargetStateArrayCache & back,
-    const OutpostStateCache & outpost) const
+    const OutpostStateCache & outpost,
+    const rclcpp::Time & control_stamp) const
   {
     ActiveTarget active;
     if (!selected_target.valid || !selected_target.msg.valid) {
@@ -597,13 +602,15 @@ private:
 
     const std::uint8_t outpost_id = outpost.valid ? outpost.msg.id : kDefaultOutpostId;
     if (selected_target.msg.id == outpost_id) {
-      if (!outpost.valid || !outpost.msg.tracking || isTimedOut(outpost.msg.header.stamp)) {
+      if (!outpost.valid || !outpost.msg.tracking ||
+        isTimedOut(outpost.msg.header.stamp, control_stamp))
+      {
         return active;
       }
       active.model = aim_armor_controller::legacyTargetModelFromOutpostState(outpost.msg);
       active.stamp = rclcpp::Time(outpost.msg.header.stamp);
       active.source_frame = resolveSourceFrame(outpost.msg.header);
-      active.measurement_age_sec = measurementAgeFromStamp(outpost.msg.header.stamp);
+      active.measurement_age_sec = measurementAgeFromStamp(outpost.msg.header.stamp, control_stamp);
       active.is_outpost = true;
       active.valid = true;
       return active;
@@ -614,7 +621,7 @@ private:
       front_0.valid ? &front_0.msg : nullptr,
       front_1.valid ? &front_1.msg : nullptr,
       back.valid ? &back.msg : nullptr);
-    if (!match.has_value() || isTimedOut(match->header.stamp)) {
+    if (!match.has_value() || isTimedOut(match->header.stamp, control_stamp)) {
       return active;
     }
 
@@ -622,7 +629,7 @@ private:
       aim_armor_controller::legacyTargetModelFromTargetState(match->header, match->target);
     active.stamp = rclcpp::Time(match->header.stamp);
     active.source_frame = resolveSourceFrame(match->header);
-    active.measurement_age_sec = measurementAgeFromStamp(match->header.stamp);
+    active.measurement_age_sec = measurementAgeFromStamp(match->header.stamp, control_stamp);
     active.is_outpost = false;
     active.valid = true;
     return active;
@@ -674,6 +681,7 @@ private:
   bool selectArmorCandidate(
     const ActiveTarget & active_target,
     const GimbalState & gimbal,
+    const rclcpp::Time & control_stamp,
     ArmorCandidate & selected,
     aim_armor_controller::LegacyTargetModel & best_target)
   {
@@ -685,7 +693,7 @@ private:
     double center_bz = 0.0;
     if (!transformWorldToBarrel(
         target.center.x, target.center.y, target.center.z, active_target.source_frame,
-        center_bx, center_by, center_bz, active_target.stamp))
+        center_bx, center_by, center_bz, control_stamp))
     {
       return false;
     }
@@ -781,7 +789,7 @@ private:
         double aim_bz = 0.0;
         if (!transformWorldToBarrel(
             aim_candidate.point_world.x, aim_candidate.point_world.y, aim_candidate.point_world.z,
-            active_target.source_frame, aim_bx, aim_by, aim_bz, active_target.stamp))
+            active_target.source_frame, aim_bx, aim_by, aim_bz, control_stamp))
         {
           return false;
         }
@@ -809,7 +817,7 @@ private:
       return false;
     }
     if (!buildCandidateFromAimPoint(
-        final_aim.point_world, active_target.source_frame, active_target.stamp, gimbal, selected))
+        final_aim.point_world, active_target.source_frame, control_stamp, gimbal, selected))
     {
       return false;
     }
@@ -861,8 +869,34 @@ private:
       return;
     }
 
-    const auto active_target =
-      resolveActiveTarget(selected_target, front_0, front_1, back, outpost);
+    const rclcpp::Time control_stamp =
+      aim_armor_controller::resolveControlStamp(gimbal.stamp, now());
+    ActiveTarget active_target =
+      resolveActiveTarget(selected_target, front_0, front_1, back, outpost, control_stamp);
+    const std::uint8_t outpost_id = outpost.valid ? outpost.msg.id : kDefaultOutpostId;
+    const bool selected_outpost =
+      selected_target.valid && selected_target.msg.valid && selected_target.msg.id == outpost_id;
+    if (active_target.valid && active_target.is_outpost) {
+      last_valid_outpost_target_ = active_target;
+      last_valid_outpost_control_stamp_ = control_stamp;
+      has_last_valid_outpost_target_ = true;
+    } else {
+      const double elapsed_sec = has_last_valid_outpost_target_ ?
+        std::max(0.0, (control_stamp - last_valid_outpost_control_stamp_).seconds()) :
+        std::numeric_limits<double>::infinity();
+      if (
+        aim_armor_controller::shouldHoldOutpostTarget(
+          selected_outpost, has_last_valid_outpost_target_, elapsed_sec, outpost_tracking_hold_sec_) &&
+        !isTimedOut(last_valid_outpost_target_.model.header.stamp, control_stamp))
+      {
+        active_target = last_valid_outpost_target_;
+        active_target.measurement_age_sec =
+          measurementAgeFromStamp(active_target.model.header.stamp, control_stamp);
+        active_target.tracking_hold = true;
+      } else if (!selected_outpost || elapsed_sec > outpost_tracking_hold_sec_) {
+        has_last_valid_outpost_target_ = false;
+      }
+    }
     if (!active_target.valid) {
       publishFallback(gimbal);
       return;
@@ -870,7 +904,7 @@ private:
 
     ArmorCandidate selected;
     aim_armor_controller::LegacyTargetModel best_target;
-    if (!selectArmorCandidate(active_target, gimbal, selected, best_target)) {
+    if (!selectArmorCandidate(active_target, gimbal, control_stamp, selected, best_target)) {
       publishFallback(gimbal);
       return;
     }
@@ -940,13 +974,17 @@ private:
 
     if (publish_legacy_control_topics_ && angle_pub_) {
       gimbal_driver::msg::GimbalAngles angle_msg;
+      angle_msg.header.stamp = control_stamp;
       angle_msg.yaw = static_cast<float>(selected.yaw_actual_want_deg);
       angle_msg.pitch = static_cast<float>(selected.pitch_actual_want_deg);
       angle_pub_->publish(angle_msg);
     }
 
     bool fire_this_tick = false;
-    if (!manual_fire_mode_ && fire_control_output.shoot_flag && fire_rate_hz_ > 0.0) {
+    if (
+      !manual_fire_mode_ && !active_target.tracking_hold &&
+      fire_control_output.shoot_flag && fire_rate_hz_ > 0.0)
+    {
       const double elapsed = (now() - last_fire_time_).seconds();
       if (elapsed >= 1.0 / fire_rate_hz_) {
         last_firecode_out_ = (last_firecode_out_ == 99) ? 96 : 99;
@@ -955,9 +993,12 @@ private:
       }
     }
 
-    aim_target_msgs::msg::AimResult aim_msg;
-    aim_msg.header.stamp = now();
+    sentry_msgs::msg::AimResult aim_msg;
+    aim_msg.header.stamp = control_stamp;
     aim_msg.header.frame_id = barrel_joint_frame_;
+    // A successful target/angle solve is the follow contract. Fire is gated
+    // independently below and must not be used as the follow signal.
+    aim_msg.follow = true;
     aim_msg.fire = fire_this_tick;
     aim_msg.pitch = static_cast<float>(selected.pitch_actual_want_deg);
     aim_msg.yaw = static_cast<float>(selected.yaw_actual_want_deg);
@@ -975,6 +1016,9 @@ private:
   OutpostStateCache outpost_cache_;
   SelectedTargetIdCache selected_target_cache_;
   GimbalState gimbal_state_;
+  ActiveTarget last_valid_outpost_target_;
+  rclcpp::Time last_valid_outpost_control_stamp_{0, 0, RCL_ROS_TIME};
+  bool has_last_valid_outpost_target_{false};
 
   bool shoot_table_adjust_{false};
   std::vector<double> pitch_param_;
@@ -985,6 +1029,7 @@ private:
   std::string barrel_joint_frame_{"gimbal_barrel_joint"};
   double target_tf_timeout_sec_{0.02};
   double target_msg_timeout_sec_{0.10};
+  double outpost_tracking_hold_sec_{0.15};
   double armor_select_area_weight_{1.0};
   double armor_select_angle_weight_{1.0};
   bool include_processing_delay_{true};
@@ -1019,7 +1064,7 @@ private:
   double fire_rate_hz_{10.0};
   aim_armor_controller::LegacyFireControlState legacy_fire_control_state_{};
 
-  rclcpp::Publisher<aim_target_msgs::msg::AimResult>::SharedPtr aim_result_pub_;
+  rclcpp::Publisher<sentry_msgs::msg::AimResult>::SharedPtr aim_result_pub_;
   rclcpp::Publisher<aim_msgs::msg::Armor>::SharedPtr selected_armor_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr debug_target_point_pub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr debug_selected_armor_index_pub_;

@@ -47,6 +47,7 @@ private:
   double auto_gain_min_{6.0};
   double auto_gain_max_{18.0};
   bool auto_gain_{false};
+  std::string auto_balance_mode_{"once"};
   int64_t gray_value_min_{100};
   int64_t gray_value_max_{200};
   float balance_ratio_red_{1.0F};

@@ -1,7 +1,7 @@
 usb_camera_node:
   ros__parameters:
     device_index: 0
-    frame_id: "usb_camera"
+    frame_id: "usb_camera_optical_frame"
     image_topic: "/usb_camera/image_raw"
     camera_info_topic: "/usb_camera/camera_info"
     publish_rate: 30.0

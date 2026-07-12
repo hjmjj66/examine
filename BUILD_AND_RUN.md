@@ -1,68 +1,86 @@
-# 自瞄测试快速指南
+# 构建与运行快速指南
 
-## 1. 编译
+当前启动使用 `/home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash`，而非 `ros2_ly_ws_sentry-Behavion`。
+`/home/hustlyrm/sentry.aim/start.bash` 现在会先 source 云台工作空间，再 source aim 工作空间。
+
+## 1. 构建
 
 ```bash
-cd /home/hustlyrm/sentry.aim
-source /opt/ros/humble/setup.bash
-source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash
-colcon build --symlink-install
-source install/setup.bash
+cd /home/hustlyrm/sentry.aim && source /opt/ros/humble/setup.bash && source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && colcon build --symlink-install && source install/setup.bash
 ```
 
-## 2. 枪管跟随（不发射）
+## 2. 枪管跟随，不自动开火
 
 ### 终端 1：云台驱动
 
 ```bash
-source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash
-ros2 launch gimbal_driver gimbal_driver.launch.py use_virtual_device:=false
+source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && ros2 launch gimbal_driver gimbal_driver.launch.py use_virtual_device:=false
 ```
 
-### 终端 2：自瞄链路
+### 终端 2：自瞄管线
 
 ```bash
-source /home/hustlyrm/sentry.aim/install/setup.bash
 cd /home/hustlyrm/sentry.aim && bash start.bash
 ```
 
-### 验证
+### 终端 3：Foxglove
 
 ```bash
-ros2 topic echo /ly/control/angles        # 枪管控制角度
-ros2 topic echo /ly/aim/result            # fire 应为 false
-ros2 topic echo /aim_outpost_predictor/outpost_state   # 前哨站跟踪
+foxglove
 ```
 
-## 3. 自动发射
+## 3. 验证
 
-修改 `src/aim_armor_controller/config/armor_controller.yaml` L18：
+```bash
+source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && ros2 topic echo /ly/gimbal/angles
+```
+
+```bash
+source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && source /home/hustlyrm/sentry.aim/install/setup.bash && ros2 topic echo /ly/control/angles
+```
+
+```bash
+source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && source /home/hustlyrm/sentry.aim/install/setup.bash && ros2 topic echo /ly/aim/result
+```
+
+```bash
+source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && source /home/hustlyrm/sentry.aim/install/setup.bash && ros2 topic echo /aim_outpost_predictor/outpost_state
+```
+
+## 4. 启用自动开火
+
+编辑 `src/aim_armor_controller/config/armor_controller.yaml`：
 
 ```yaml
 manual_fire_mode: False
 ```
 
-重编重启：
+重新构建并重启终端 2：
 
 ```bash
-cd /home/hustlyrm/sentry.aim
-colcon build --symlink-install --packages-select aim_armor_controller
-source install/setup.bash
-# 停终端 2，重新 bash start.bash
+cd /home/hustlyrm/sentry.aim && source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && source install/setup.bash && colcon build --symlink-install --packages-select aim_armor_controller && source install/setup.bash
 ```
-
-## 4. 手动发射
-
-`manual_fire_mode: True` 时，在任意终端：
 
 ```bash
-# 单发
-ros2 topic pub -1 /ly/control/firecode std_msgs/msg/UInt8 "data: 1"
-
-# 连发 2Hz
-ros2 topic pub /ly/control/firecode std_msgs/msg/UInt8 "data: 1" -r 2
+cd /home/hustlyrm/sentry.aim && bash start.bash
 ```
 
-## 5. 停车
+## 5. 手动开火
 
-先 Ctrl+C 终端 2，等节点退完（几秒），再 Ctrl+C 终端 1。
+当 `manual_fire_mode: True` 时，可从任意终端发布。
+
+单发射击：
+
+```bash
+source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && ros2 topic pub -1 /ly/control/firecode std_msgs/msg/UInt8 "data: 1"
+```
+
+以 2 Hz 连续射击：
+
+```bash
+source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && ros2 topic pub /ly/control/firecode std_msgs/msg/UInt8 "data: 1" -r 2
+```
+
+## 6. 停止
+
+先用 Ctrl+C 停止终端 2，等待几秒让节点退出，再停止终端 1。Foxglove 单独用 Ctrl+C 停止。

@@ -461,7 +461,7 @@ bool AimSolverNode::solveArmorPose(
     tvec.at<double>(0),
     tvec.at<double>(1),
     tvec.at<double>(2));
-  const cv::Vec3d camera_position = opticalPointToCameraFrame(optical_position);
+  const cv::Vec3d camera_position = opticalPointToSolverInputFrame(optical_position);
   pose_msg.position.x = camera_position[0];
   pose_msg.position.y = camera_position[1];
   pose_msg.position.z = camera_position[2];
@@ -475,7 +475,7 @@ bool AimSolverNode::solveArmorPose(
     }
   }
   pose_msg.orientation = rotationMatrixToQuaternion(
-    opticalRotationToCameraFrame(optical_rotation));
+    opticalRotationToSolverInputFrame(optical_rotation));
   return true;
 }
 
@@ -825,8 +825,8 @@ std::vector<cv::Point2f> AimSolverNode::reprojectArmor(
   const cv::Vec3d target_camera =
     rotation_world_to_camera * target_world + translation_world_to_camera;
   const cv::Matx33d rotation_armor_to_optical =
-    cameraRotationToOpticalFrame(rotation_armor_to_camera);
-  const cv::Vec3d target_optical = cameraPointToOpticalFrame(target_camera);
+    opticalRotationToSolverInputFrame(rotation_armor_to_camera);
+  const cv::Vec3d target_optical = opticalPointToSolverInputFrame(target_camera);
 
   cv::Mat rotation_cv(3, 3, CV_64F);
   for (int row = 0; row < 3; ++row) {

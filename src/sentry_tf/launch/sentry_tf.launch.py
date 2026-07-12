@@ -20,6 +20,38 @@ def launch_setup(context, *args, **kwargs):
     cam1 = cfg.get("barrel_to_camera_1", {})
     big_cam = cfg.get("small_yaw_to_usb_camera", {})
 
+    def static_transform_node(name, transform):
+        return Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name=name,
+            output="screen",
+            arguments=[
+                "--x", str(transform["x"]),
+                "--y", str(transform["y"]),
+                "--z", str(transform["z"]),
+                "--yaw", str(transform["yaw"]),
+                "--pitch", str(transform["pitch"]),
+                "--roll", str(transform["roll"]),
+                "--frame-id", transform["parent_frame"],
+                "--child-frame-id", transform["child_frame"],
+            ],
+        )
+
+    def optical_transform_node(parent_frame, child_frame):
+        return Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name=f"{parent_frame}_to_optical_tf",
+            output="screen",
+            arguments=[
+                "--x", "0.0", "--y", "0.0", "--z", "0.0",
+                "--qx", "0.5", "--qy", "-0.5", "--qz", "0.5", "--qw", "-0.5",
+                "--frame-id", parent_frame,
+                "--child-frame-id", child_frame,
+            ],
+        )
+
     nodes = [
         Node(
             package="sentry_tf",
@@ -28,78 +60,21 @@ def launch_setup(context, *args, **kwargs):
             output="screen",
             parameters=[tf_params],
         ),
-        Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="barrel_to_camera_0_tf",
-            output="screen",
-            arguments=[
-                str(cam["x"]),
-                str(cam["y"]),
-                str(cam["z"]),
-                str(cam["yaw"]),
-                str(cam["pitch"]),
-                str(cam["roll"]),
-                cam["parent_frame"],
-                cam["child_frame"],
-            ],
-        ),
-        Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="baselink_to_gimbal_small_yaw_tf",
-            output="screen",
-            arguments=[
-                "0.0",
-                "0.0",
-                "0.0",
-                "0.0",
-                "0.0",
-                "0.0",
-                "base_link",
-                tf_params["yaw_frame"],
-            ],
-        ),
+        static_transform_node("barrel_to_camera_0_tf", cam),
+        optical_transform_node(cam["child_frame"], f"{cam['child_frame']}_optical_frame"),
     ]
 
     if big_cam:
+        nodes.append(static_transform_node("small_yaw_to_usb_camera_tf", big_cam))
         nodes.append(
-            Node(
-                package="tf2_ros",
-                executable="static_transform_publisher",
-                name="small_yaw_to_usb_camera_tf",
-                output="screen",
-                arguments=[
-                    str(big_cam["x"]),
-                    str(big_cam["y"]),
-                    str(big_cam["z"]),
-                    str(big_cam["yaw"]),
-                    str(big_cam["pitch"]),
-                    str(big_cam["roll"]),
-                    big_cam["parent_frame"],
-                    big_cam["child_frame"],
-                ],
-            )
+            optical_transform_node(
+                big_cam["child_frame"], f"{big_cam['child_frame']}_optical_frame")
         )
 
     if cam1:
+        nodes.append(static_transform_node("barrel_to_camera_1_tf", cam1))
         nodes.append(
-            Node(
-                package="tf2_ros",
-                executable="static_transform_publisher",
-                name="barrel_to_camera_1_tf",
-                output="screen",
-                arguments=[
-                    str(cam1["x"]),
-                    str(cam1["y"]),
-                    str(cam1["z"]),
-                    str(cam1["yaw"]),
-                    str(cam1["pitch"]),
-                    str(cam1["roll"]),
-                    cam1["parent_frame"],
-                    cam1["child_frame"],
-                ],
-            )
+            optical_transform_node(cam1["child_frame"], f"{cam1['child_frame']}_optical_frame")
         )
 
     return nodes

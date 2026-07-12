@@ -2,7 +2,7 @@ gx_camera_node:
   ros__parameters:
     device_sn: "FGK24050145"
     device_index: 2
-    frame_id: "gx_camera_1"
+    frame_id: "gx_camera_1_optical_frame"
     image_topic: "/gx_camera_1/image_raw"
     camera_info_topic: "/gx_camera_1/camera_info"
     publish_rate: 100.0
@@ -13,16 +13,18 @@ gx_camera_node:
     gain: 12.0
     auto_gain_max: 12.0
     auto_gain_min: 2.0
-    auto_gain: 1
+    auto_gain: 0
 
     exposure_time: 2000.0
-    auto_exposure_time_max: 30000.0
+    auto_exposure_time_max: 10000.0
     auto_exposure_time_min: 1000.0
-    auto_exposure: 1
+    auto_exposure: 0
 
-    red_balance_ratio: 1.8906
+    red_balance_ratio: 2.0000
     green_balance_ratio: 1.0
-    blue_balance_ratio: 1.5703
+    blue_balance_ratio: 1.6300
+    auto_balance_mode: "once"
+#有三种模式：once、continuous、off，默认是once
 
     camera_fx: 1543.5313225509
     camera_fy: 1543.6532647271

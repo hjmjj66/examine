@@ -16,6 +16,7 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="${SCRIPT_DIR}"
 SETUP_FILE="${WORKSPACE_ROOT}/install/setup.bash"
+GIMBAL_SETUP_FILE="/home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash"
 PIDS=()
 
 echo "======================================================================"
@@ -29,6 +30,13 @@ if [ ! -f "${SETUP_FILE}" ]; then
     exit 1
 fi
 
+if [ ! -f "${GIMBAL_SETUP_FILE}" ]; then
+    echo "[ERROR] Missing ${GIMBAL_SETUP_FILE}"
+    echo "       sentry_tf depends on gimbal_driver custom messages; build ros2_ly_ws_sentry first"
+    exit 1
+fi
+
+source "${GIMBAL_SETUP_FILE}"
 source "${SETUP_FILE}"
 
 cleanup() {

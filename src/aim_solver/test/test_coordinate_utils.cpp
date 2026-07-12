@@ -28,3 +28,33 @@ TEST(AimSolverCoordinateUtilsTest, ConvertsOpticalRotationToEngineeringCameraFra
   EXPECT_DOUBLE_EQ(camera_rotation(2, 1), -1.0);
   EXPECT_DOUBLE_EQ(camera_rotation(2, 2), 0.0);
 }
+
+TEST(AimSolverCoordinateUtilsTest, KeepsOpticalPointInOpticalFrameForSolverInput)
+{
+  const cv::Vec3d optical_point(1.0, 2.0, 3.0);
+  const cv::Vec3d solver_point = aim_solver::opticalPointToSolverInputFrame(optical_point);
+
+  EXPECT_DOUBLE_EQ(solver_point[0], 1.0);
+  EXPECT_DOUBLE_EQ(solver_point[1], 2.0);
+  EXPECT_DOUBLE_EQ(solver_point[2], 3.0);
+}
+
+TEST(AimSolverCoordinateUtilsTest, KeepsOpticalRotationInOpticalFrameForSolverInput)
+{
+  const cv::Matx33d optical_rotation(
+    0.0, -1.0, 0.0,
+    1.0, 0.0, 0.0,
+    0.0, 0.0, 1.0);
+  const cv::Matx33d solver_rotation =
+    aim_solver::opticalRotationToSolverInputFrame(optical_rotation);
+
+  EXPECT_DOUBLE_EQ(solver_rotation(0, 0), 0.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(0, 1), -1.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(0, 2), 0.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(1, 0), 1.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(1, 1), 0.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(1, 2), 0.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(2, 0), 0.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(2, 1), 0.0);
+  EXPECT_DOUBLE_EQ(solver_rotation(2, 2), 1.0);
+}

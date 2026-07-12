@@ -1,5 +1,7 @@
 #include "aim_handeye_calibrator/aim_handeye_calibrator_node.hpp"
 
+#include "aim_handeye_calibrator/gimbal_kinematics.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -63,28 +65,6 @@ double rotationAngleDeg(const cv::Mat & rotation)
   return rad2deg(cv::norm(rvec));
 }
 
-cv::Mat rotationFromRollPitchYaw(double roll_rad, double pitch_rad, double yaw_rad)
-{
-  const double cr = std::cos(roll_rad);
-  const double sr = std::sin(roll_rad);
-  const double cp = std::cos(pitch_rad);
-  const double sp = std::sin(pitch_rad);
-  const double cy = std::cos(yaw_rad);
-  const double sy = std::sin(yaw_rad);
-
-  cv::Mat rotation = cv::Mat::eye(3, 3, CV_64F);
-  rotation.at<double>(0, 0) = cy * cp;
-  rotation.at<double>(0, 1) = cy * sp * sr - sy * cr;
-  rotation.at<double>(0, 2) = cy * sp * cr + sy * sr;
-  rotation.at<double>(1, 0) = sy * cp;
-  rotation.at<double>(1, 1) = sy * sp * sr + cy * cr;
-  rotation.at<double>(1, 2) = sy * sp * cr - cy * sr;
-  rotation.at<double>(2, 0) = -sp;
-  rotation.at<double>(2, 1) = cp * sr;
-  rotation.at<double>(2, 2) = cp * cr;
-  return rotation;
-}
-
 std::array<double, 3> rollPitchYawFromRotation(const cv::Mat & rotation)
 {
   const double yaw = std::atan2(rotation.at<double>(1, 0), rotation.at<double>(0, 0));
@@ -145,6 +125,7 @@ AimHandeyeCalibratorNode::AimHandeyeCalibratorNode(const rclcpp::NodeOptions & o
   declare_parameter<double>("pitch_sign", -1.0);
   declare_parameter<double>("min_angle_delta_deg", 2.0);
   declare_parameter<bool>("use_pitch", true);
+  declare_parameter<double>("barrel_offset_z", 0.0);
   declare_parameter<std::vector<double>>("camera_matrix", std::vector<double>{});
   declare_parameter<std::vector<double>>("distortion_coefficients", std::vector<double>{});
 
@@ -165,6 +146,7 @@ AimHandeyeCalibratorNode::AimHandeyeCalibratorNode(const rclcpp::NodeOptions & o
   angles_in_degree_ = get_parameter("angles_in_degree").as_bool();
   use_camera_info_topic_ = get_parameter("use_camera_info_topic").as_bool();
   use_pitch_ = get_parameter("use_pitch").as_bool();
+  barrel_offset_z_ = get_parameter("barrel_offset_z").as_double();
   min_angle_delta_rad_ = get_parameter("min_angle_delta_deg").as_double() * kPi / 180.0;
 
   if (board_cols_ < 2 || board_rows_ < 2) {
@@ -551,8 +533,12 @@ bool AimHandeyeCalibratorNode::solveCalibration(SolveResult & result) const
   translations_target_to_optical.reserve(samples.size());
 
   for (const auto & sample : samples) {
-    rotations_gripper_to_base.push_back(buildBaseToGimbalRotation(sample.yaw_rad, sample.pitch_rad));
-    translations_gripper_to_base.push_back((cv::Mat_<double>(3, 1) << 0.0, 0.0, 0.0));
+    const cv::Mat transform_base_to_gimbal =
+      buildBaseToGimbalTransform(sample.yaw_rad, sample.pitch_rad);
+    rotations_gripper_to_base.push_back(
+      transform_base_to_gimbal(cv::Rect(0, 0, 3, 3)).clone());
+    translations_gripper_to_base.push_back(
+      transform_base_to_gimbal(cv::Rect(3, 0, 1, 3)).clone());
     rotations_target_to_optical.push_back(sample.rotation_target_to_optical);
     translations_target_to_optical.push_back(sample.translation_target_to_optical);
   }
@@ -593,9 +579,8 @@ bool AimHandeyeCalibratorNode::solveCalibration(SolveResult & result) const
   std::vector<cv::Mat> base_to_target_transforms;
   base_to_target_transforms.reserve(samples.size());
   for (const auto & sample : samples) {
-    const cv::Mat transform_base_to_gimbal = makeTransform(
-      buildBaseToGimbalRotation(sample.yaw_rad, sample.pitch_rad),
-      (cv::Mat_<double>(3, 1) << 0.0, 0.0, 0.0));
+    const cv::Mat transform_base_to_gimbal =
+      buildBaseToGimbalTransform(sample.yaw_rad, sample.pitch_rad);
     const cv::Mat transform_target_to_optical = makeTransform(
       sample.rotation_target_to_optical,
       sample.translation_target_to_optical);
@@ -643,9 +628,12 @@ cv::Mat AimHandeyeCalibratorNode::toDoubleMatrix(const cv::Mat & input)
   return output;
 }
 
-cv::Mat AimHandeyeCalibratorNode::buildBaseToGimbalRotation(double yaw_rad, double pitch_rad) const
+cv::Mat AimHandeyeCalibratorNode::buildBaseToGimbalTransform(
+  double yaw_rad, double pitch_rad) const
 {
-  return rotationFromRollPitchYaw(0.0, pitch_rad, yaw_rad);
+  const double applied_pitch = use_pitch_ ? pitch_rad : 0.0;
+  const double pitch_axis_offset_z = use_pitch_ ? barrel_offset_z_ : 0.0;
+  return cv::Mat(yawPitchTransform(yaw_rad, applied_pitch, pitch_axis_offset_z));
 }
 
 cv::Mat AimHandeyeCalibratorNode::cameraToOpticalRotation() const

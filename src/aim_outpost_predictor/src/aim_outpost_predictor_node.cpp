@@ -717,9 +717,9 @@ void AimOutpostPredictorNode::onArmorPoseSets(
   bool from_front_0,
   const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
 {
-  std::vector<ArmorMeasurement> measurements = extractMeasurements(msg);
   const auto now = std::chrono::steady_clock::now();
   std::lock_guard<std::mutex> lock(tracker_mutex_);
+  std::vector<ArmorMeasurement> measurements = extractMeasurements(msg);
 
   if (from_front_0) {
     if (!front_camera_arbitrator_.shouldProcessFront0(!measurements.empty(), now)) {
@@ -737,6 +737,9 @@ AimOutpostPredictorNode::extractMeasurements(
   const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr & msg)
 {
   std::vector<ArmorMeasurement> measurements;
+  std::vector<ArmorMeasurement> gated_measurements;
+  const bool apply_yaw_gate =
+    tracker_.active() && tracker_.converged() && !tracker_.diverged() && tracker_.lost_count == 0;
   const std::optional<double> gimbal_yaw = lookupGimbalYaw(msg->header);
   for (const auto & armor_pose_set : msg->armor_pose_sets) {
     if (armor_pose_set.id != outpost_id_) {
@@ -749,14 +752,26 @@ AimOutpostPredictorNode::extractMeasurements(
       measurement.xyz = Eigen::Vector3d(pose.position.x, pose.position.y, pose.position.z);
       measurement.ypr = poseToYpr(pose);
       measurement.ypd = xyzToYpd(measurement.xyz);
-      if (
-        gimbal_yaw.has_value() &&
-        std::abs(limitRad(measurement.ypr.x() - *gimbal_yaw)) > armor_gimbal_yaw_gate_rad_)
-      {
-        continue;
-      }
       measurements.push_back(measurement);
+
+      if (
+        !apply_yaw_gate || !gimbal_yaw.has_value() ||
+        std::abs(limitRad(measurement.ypr.x() - *gimbal_yaw)) <= armor_gimbal_yaw_gate_rad_)
+      {
+        gated_measurements.push_back(measurement);
+      }
     }
+  }
+
+  if (!apply_yaw_gate || !gated_measurements.empty()) {
+    return gated_measurements;
+  }
+
+  if (!measurements.empty() && gimbal_yaw.has_value()) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "outpost yaw gate rejected all observations at stamp %.9f, falling back to ungated measurements",
+      rclcpp::Time(msg->header.stamp).seconds());
   }
 
   return measurements;

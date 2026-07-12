@@ -9,7 +9,7 @@ aim_outpost_predictor_node:
     world_frame_id: "gimbal_world"
     gimbal_frame_id: "gimbal_small_yaw"
     tf_lookup_timeout_sec: 0.01
-    armor_gimbal_yaw_gate_deg: 40.0
+    armor_gimbal_yaw_gate_deg: 70.0
     outpost_id: 6
     max_lost_count: 75
     min_consecutive_detections_to_track: 2

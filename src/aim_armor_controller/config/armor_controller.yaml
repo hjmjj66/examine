@@ -33,7 +33,9 @@ armor_controller_node:
     # TF 查询超时时间，设为 0 表示不等待，查不到立即 fallback
     target_tf_timeout_sec: 0.10
     # 目标消息超过该时长未更新则直接 fallback，避免使用陈旧时间戳反复查 TF
-    target_msg_timeout_sec: 0.10
+    target_msg_timeout_sec: 0.30
+    # Hold the last valid outpost target through a brief tracking dropout; fire remains disabled.
+    outpost_tracking_hold_sec: 0.15
     armor_select_area_weight: 1.0
     armor_select_angle_weight: 0.0
     include_processing_delay: true

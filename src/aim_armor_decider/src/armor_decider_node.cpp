@@ -16,8 +16,8 @@
 #include "aim_msgs/msg/selected_target_id.hpp"
 #include "aim_msgs/msg/target_state.hpp"
 #include "aim_msgs/msg/target_state_array.hpp"
-#include "aim_target_msgs/msg/aim_target.hpp"
-#include "aim_target_msgs/msg/aim_target_array.hpp"
+#include "sentry_msgs/msg/aim_target.hpp"
+#include "sentry_msgs/msg/aim_target_array.hpp"
 
 namespace
 {
@@ -129,7 +129,7 @@ public:
     default_select_outpost_when_no_external_target_ =
       get_parameter("default_select_outpost_when_no_external_target").as_bool();
 
-    targets_pub_ = create_publisher<aim_target_msgs::msg::AimTargetArray>(
+    targets_pub_ = create_publisher<sentry_msgs::msg::AimTargetArray>(
       armor_targets_topic, rclcpp::SensorDataQoS());
     selected_target_id_pub_ = create_publisher<aim_msgs::msg::SelectedTargetId>(
       selected_target_id_topic, rclcpp::SensorDataQoS());
@@ -146,7 +146,7 @@ public:
     outpost_sub_ = create_subscription<aim_msgs::msg::OutpostState>(
       outpost_state_topic_, rclcpp::SensorDataQoS(),
       std::bind(&AimArmorDeciderNode::onOutpostState, this, std::placeholders::_1));
-    select_sub_ = create_subscription<aim_target_msgs::msg::AimTarget>(
+    select_sub_ = create_subscription<sentry_msgs::msg::AimTarget>(
       select_target_topic, rclcpp::SensorDataQoS(),
       std::bind(&AimArmorDeciderNode::onSelectTarget, this, std::placeholders::_1));
 
@@ -161,7 +161,7 @@ public:
   }
 
 private:
-  void onSelectTarget(const aim_target_msgs::msg::AimTarget::ConstSharedPtr msg)
+  void onSelectTarget(const sentry_msgs::msg::AimTarget::ConstSharedPtr msg)
   {
     if (!msg) {
       return;
@@ -269,12 +269,12 @@ private:
     const std_msgs::msg::Header & header,
     const std::vector<TargetCandidate> & candidates) const
   {
-    aim_target_msgs::msg::AimTargetArray targets;
+    sentry_msgs::msg::AimTargetArray targets;
     targets.header = header;
 
     targets.aim_targets.reserve(candidates.size());
     for (const auto & candidate : candidates) {
-      aim_target_msgs::msg::AimTarget target;
+      sentry_msgs::msg::AimTarget target;
       target.header = candidate.header;
       if (target.header.frame_id.empty()) {
         target.header = header;
@@ -389,13 +389,13 @@ private:
   std::string outpost_state_topic_;
   uint8_t outpost_target_id_{6};
 
-  rclcpp::Publisher<aim_target_msgs::msg::AimTargetArray>::SharedPtr targets_pub_;
+  rclcpp::Publisher<sentry_msgs::msg::AimTargetArray>::SharedPtr targets_pub_;
   rclcpp::Publisher<aim_msgs::msg::SelectedTargetId>::SharedPtr selected_target_id_pub_;
   rclcpp::Subscription<aim_msgs::msg::TargetStateArray>::SharedPtr front_0_sub_;
   rclcpp::Subscription<aim_msgs::msg::TargetStateArray>::SharedPtr front_1_sub_;
   rclcpp::Subscription<aim_msgs::msg::TargetStateArray>::SharedPtr back_sub_;
   rclcpp::Subscription<aim_msgs::msg::OutpostState>::SharedPtr outpost_sub_;
-  rclcpp::Subscription<aim_target_msgs::msg::AimTarget>::SharedPtr select_sub_;
+  rclcpp::Subscription<sentry_msgs::msg::AimTarget>::SharedPtr select_sub_;
 };
 
 int main(int argc, char ** argv)

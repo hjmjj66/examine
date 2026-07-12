@@ -1,6 +1,7 @@
 #include "aim_camera_driver/gx_camera_component.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <string>
@@ -22,6 +23,24 @@ namespace
 bool gx_ok(GX_STATUS status)
 {
   return status == GX_STATUS_SUCCESS;
+}
+
+GX_BALANCE_WHITE_AUTO_ENTRY parse_auto_balance_mode(const std::string & mode)
+{
+  std::string normalized = mode;
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+  if (normalized == "off") {
+    return GX_BALANCE_WHITE_AUTO_OFF;
+  }
+  if (normalized == "once") {
+    return GX_BALANCE_WHITE_AUTO_ONCE;
+  }
+  if (normalized == "continuous") {
+    return GX_BALANCE_WHITE_AUTO_CONTINUOUS;
+  }
+  return GX_BALANCE_WHITE_AUTO_OFF;
 }
 
 }  // namespace
@@ -52,6 +71,7 @@ GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
   declare_parameter<int>("auto_exposure", 0);
 
   // ---- 白平衡 ----
+  declare_parameter<std::string>("auto_balance_mode", "once");
   declare_parameter<double>("red_balance_ratio", 1.0);
   declare_parameter<double>("green_balance_ratio", 1.0);
   declare_parameter<double>("blue_balance_ratio", 1.0);
@@ -84,6 +104,7 @@ GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
   auto_gain_max_ = get_parameter("auto_gain_max").as_double();
   auto_gain_min_ = get_parameter("auto_gain_min").as_double();
   auto_gain_ = (get_parameter("auto_gain").as_int() != 0);
+  auto_balance_mode_ = get_parameter("auto_balance_mode").as_string();
   balance_ratio_red_ = static_cast<float>(get_parameter("red_balance_ratio").as_double());
   balance_ratio_green_ = static_cast<float>(get_parameter("green_balance_ratio").as_double());
   balance_ratio_blue_ = static_cast<float>(get_parameter("blue_balance_ratio").as_double());
@@ -299,19 +320,30 @@ bool GxCameraComponent::setGxExposureGain()
 }
 
 // ===========================================================================
-// setGxWhiteBalance —— 手动白平衡
+// setGxWhiteBalance -- auto/manual white balance
 // ===========================================================================
 bool GxCameraComponent::setGxWhiteBalance()
 {
+  const auto auto_balance = parse_auto_balance_mode(auto_balance_mode_);
+  if (auto_balance != GX_BALANCE_WHITE_AUTO_OFF) {
+    return gx_ok(GXSetEnum(device_, GX_ENUM_BALANCE_WHITE_AUTO, auto_balance));
+  }
+
   auto status = GXSetEnum(device_, GX_ENUM_BALANCE_WHITE_AUTO, GX_BALANCE_WHITE_AUTO_OFF);
+  if (!gx_ok(status)) { return false; }
 
   status = GXSetEnum(device_, GX_ENUM_BALANCE_RATIO_SELECTOR, GX_BALANCE_RATIO_SELECTOR_RED);
+  if (!gx_ok(status)) { return false; }
   status = GXSetFloat(device_, GX_FLOAT_BALANCE_RATIO, balance_ratio_red_);
+  if (!gx_ok(status)) { return false; }
 
   status = GXSetEnum(device_, GX_ENUM_BALANCE_RATIO_SELECTOR, GX_BALANCE_RATIO_SELECTOR_BLUE);
+  if (!gx_ok(status)) { return false; }
   status = GXSetFloat(device_, GX_FLOAT_BALANCE_RATIO, balance_ratio_blue_);
+  if (!gx_ok(status)) { return false; }
 
   status = GXSetEnum(device_, GX_ENUM_BALANCE_RATIO_SELECTOR, GX_BALANCE_RATIO_SELECTOR_GREEN);
+  if (!gx_ok(status)) { return false; }
   status = GXSetFloat(device_, GX_FLOAT_BALANCE_RATIO, balance_ratio_green_);
 
   return gx_ok(status);

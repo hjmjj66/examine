@@ -9,7 +9,7 @@ find_package(ament_cmake REQUIRED)
 find_package(aim_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(aim_target_msgs REQUIRED)
+find_package(sentry_msgs REQUIRED)
 
 add_executable(aim_armor_decider_node
   src/armor_decider_node.cpp
@@ -21,7 +21,7 @@ ament_target_dependencies(aim_armor_decider_node
   aim_msgs
   geometry_msgs
   rclcpp
-  aim_target_msgs
+  sentry_msgs
 )
 
 install(TARGETS aim_armor_decider_node

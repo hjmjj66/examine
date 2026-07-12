@@ -10,6 +10,9 @@
     handeye_method: "tsai"
     output_file: ""
     use_camera_info_topic: false
+    use_pitch: true
+    # yaw axis reference point to pitch axis center +Z offset.
+    barrel_offset_z: 0.320
     angles_in_degree: true
     board_cols: 11
     board_rows: 8
