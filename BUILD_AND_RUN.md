@@ -29,6 +29,11 @@ cd /home/hustlyrm/sentry.aim && bash start.bash
 foxglove
 ```
 
+ros2 topic pub -r 5 /ly/aim/select_target \
+    sentry_msgs/msg/AimTarget '{id: 6}'
+
+sudo pkill -9 -f "ros2|rclcpp|rclpy|launch|livox|dlio|foxglove|gimbal|camera|aim"
+
 ## 3. 验证
 
 ```bash

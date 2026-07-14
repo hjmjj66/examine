@@ -1,38 +1,38 @@
 gx_camera_node:
   ros__parameters:
-    device_sn: "FGK24050145"
-    device_index: 2
-    frame_id: "gx_camera_1_optical_frame"
-    image_topic: "/gx_camera_1/image_raw"
-    camera_info_topic: "/gx_camera_1/camera_info"
-    publish_rate: 100.0
+    device_sn: "FGK24050145" # 相机序列号
+    device_index: 2 # 设备索引
+    frame_id: "gx_camera_1_optical_frame" # 图像光学坐标系
+    image_topic: "/gx_camera_1/image_raw" # 原始图像话题
+    camera_info_topic: "/gx_camera_1/camera_info" # 相机内参话题
+    publish_rate: 100.0 # 图像发布频率（Hz）
 
-    width: 1280
-    height: 1024
+    width: 1280 # 图像宽度（像素）
+    height: 1024 # 图像高度（像素）
 
-    gain: 12.0
-    auto_gain_max: 12.0
-    auto_gain_min: 2.0
-    auto_gain: 0
+    gain: 12.0 # 手动增益
+    auto_gain_max: 12.0 # 自动增益上限
+    auto_gain_min: 2.0 # 自动增益下限
+    auto_gain: 0 # 是否自动增益（0=关，非0=开）
 
-    exposure_time: 2000.0
-    auto_exposure_time_max: 10000.0
-    auto_exposure_time_min: 1000.0
-    auto_exposure: 0
+    exposure_time: 2000.0 # 手动曝光时间
+    auto_exposure_time_max: 10000.0 # 自动曝光上限
+    auto_exposure_time_min: 1000.0 # 自动曝光下限
+    auto_exposure: 0 # 是否自动曝光（0=关，非0=开）
 
-    red_balance_ratio: 2.0000
-    green_balance_ratio: 1.0
-    blue_balance_ratio: 1.6300
-    auto_balance_mode: "once"
-#有三种模式：once、continuous、off，默认是once
+    red_balance_ratio: 2.0000 # 红通道白平衡倍率
+    green_balance_ratio: 1.0 # 绿通道白平衡倍率
+    blue_balance_ratio: 1.6300 # 蓝通道白平衡倍率
+    auto_balance_mode: "once" # 自动白平衡：once/continuous/off
+# 自动白平衡模式可选 once、continuous、off。
 
-    camera_fx: 1543.5313225509
-    camera_fy: 1543.6532647271
-    camera_cx: 605.3761892974
-    camera_cy: 492.7908483571
+    camera_fx: 1543.5313225509 # X 方向焦距
+    camera_fy: 1543.6532647271 # Y 方向焦距
+    camera_cx: 605.3761892974 # 主点 X 坐标
+    camera_cy: 492.7908483571 # 主点 Y 坐标
 
-    dist_k1: -0.2065504948
-    dist_k2: 0.1520899445
-    dist_p1: 0.0002382891
-    dist_p2: 0.0006906806
-    dist_k3: 0.0535836285
+    dist_k1: -0.2065504948 # 径向畸变 k1
+    dist_k2: 0.1520899445 # 径向畸变 k2
+    dist_p1: 0.0002382891 # 切向畸变 p1
+    dist_p2: 0.0006906806 # 切向畸变 p2
+    dist_k3: 0.0535836285 # 径向畸变 k3

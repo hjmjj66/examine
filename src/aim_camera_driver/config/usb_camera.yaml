@@ -1,32 +1,32 @@
 usb_camera_node:
   ros__parameters:
-    device_index: 0
-    frame_id: "usb_camera_optical_frame"
-    image_topic: "/usb_camera/image_raw"
-    camera_info_topic: "/usb_camera/camera_info"
-    publish_rate: 30.0
+    device_index: 0 # V4L2 摄像头设备索引
+    frame_id: "usb_camera_optical_frame" # 图像光学坐标系
+    image_topic: "/usb_camera/image_raw" # 原始图像话题
+    camera_info_topic: "/usb_camera/camera_info" # 相机内参话题
+    publish_rate: 30.0 # 图像发布频率（Hz）
 
-    width: 1280
-    height: 720
-    fps: 30.0
+    width: 1280 # 图像宽度（像素）
+    height: 720 # 图像高度（像素）
+    fps: 30.0 # 摄像头采集帧率
     
-    camera_fx: 549.8351599620
-    camera_fy: 545.6222130545
-    camera_cx: 599.1912418111
-    camera_cy: 420.2722299780
+    camera_fx: 549.8351599620 # X 方向焦距
+    camera_fy: 545.6222130545 # Y 方向焦距
+    camera_cx: 599.1912418111 # 主点 X 坐标
+    camera_cy: 420.2722299780 # 主点 Y 坐标
 
-    dist_k1: 0.1255592953
-    dist_k2: -0.1963274373
-    dist_p1: -0.0012630831
-    dist_p2: -0.0034363489
-    dist_k3: 0.0630439860
+    dist_k1: 0.1255592953 # 径向畸变 k1
+    dist_k2: -0.1963274373 # 径向畸变 k2
+    dist_p1: -0.0012630831 # 切向畸变 p1
+    dist_p2: -0.0034363489 # 切向畸变 p2
+    dist_k3: 0.0630439860 # 径向畸变 k3
 
-    exposure_auto: true
-    exposure: 100.0
-    gain: 0.0
-    brightness: 0.0
-    saturation: -1.0
-    contrast: -1.0
+    exposure_auto: true # 是否自动曝光
+    exposure: 100.0 # 手动曝光值（驱动支持时生效）
+    gain: 0.0 # 图像增益
+    brightness: 0.0 # 亮度调节；负值通常表示不设置
+    saturation: -1.0 # 饱和度；负值通常表示不设置
+    contrast: -1.0 # 对比度；负值通常表示不设置
 
-    v4l2_exposure_mode_auto_value: 0.25
-    v4l2_exposure_mode_manual_value: 1.0
+    v4l2_exposure_mode_auto_value: 0.25 # V4L2 自动曝光模式枚举值
+    v4l2_exposure_mode_manual_value: 1.0 # V4L2 手动曝光模式枚举值
