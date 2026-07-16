@@ -39,14 +39,13 @@
     # ---------- 共享参数 ----------
     target_frame: "gimbal_world" # 解算位姿转换并输出到的目标坐标系
     tf_lookup_timeout_sec: 0.01 # 查询目标坐标系 TF 的最长等待时间（秒）
-    tf_timestamp_offset_sec: 0.0 # 基于图像时间查询 TF 时附加的时间偏移（秒）
+    tf_timestamp_offset_sec: -0.244 # 基于图像时间查询 TF 时附加的时间偏移（秒）
     use_current_time_for_tf: false # true 时查询最新 TF，忽略图像时间戳与上述偏移
     enable_visualization: true # 是否发布装甲板位姿 Marker 可视化
     use_generic_mode: false # 是否使用 solvePnPGeneric 生成并筛选多个 PnP 解
-    project_error_ratio_thres: 3.0 # 候选 PnP 解重投影误差比超过此值时保持默认解顺序
-    roll_thres_degree: 15.0 # 候选解滚转角超过此值时保持默认解顺序（度）
+    project_error_ratio_thres: 3.0 # 两个 PnP 解重投影误差比超过此值时丢弃结果
+    roll_thres_degree: 15.0 # 解算装甲板滚转角超过此值时丢弃结果（度）
     outpost_is_small_armor: true # 前哨站使用小装甲板尺寸；false 时使用大装甲板尺寸
     enable_optimize_yaw: true # 是否在固定俯仰角约束下优化装甲板偏航角
     optimize_yaw_pitch_deg: 15.0 # 普通装甲板偏航优化采用的固定俯仰角（度）
-    # Outpost armor plane: 75 deg to horizontal, i.e. 15 deg downward from vertical.
     optimize_yaw_outpost_pitch_deg: -15.0 # 前哨站偏航优化采用的固定俯仰角（度）

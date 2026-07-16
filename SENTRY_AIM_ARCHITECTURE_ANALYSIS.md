@@ -52,8 +52,13 @@
                                 v
                          /ly/aim/result        (fire, pitch_deg, yaw_deg)
                          /ly/control/angles    (GimbalAngles)
-                         /ly/control/firecode  (UInt8)
+                         /ly/control/firecode  (gimbal_driver/msg/FireCode)
 ```
+
+火控消息使用 `gimbal_driver/msg/FireCode` 的语义字段。真正的开火翻转字段是
+`fire_status`，按下位机协议在 `0b00 (0)` 与 `0b11 (3)` 之间切换；`raw` 是包含
+`fire_status/cap_state/follow_mode/aim_mode/rotate` 的完整 1 字节组合值，不应直接
+当作开火状态使用。
 
 ### 1.3 三条独立子链路
 
@@ -110,7 +115,7 @@
     └── 发布:
         ├── AimResult: {fire: bool, pitch: 15.3°, yaw: 42.7°}
         ├── GimbalAngles: {yaw: 42.7, pitch: 15.3}
-        └── UInt8 firecode: 99 (开火)
+        └── FireCode: {fire_status: 3, ...} (本次开火翻转)
 ```
 
 ---
@@ -909,7 +914,8 @@ if yaw_error_deg < shoot_yaw_tolerance_deg (1.0°)
 发射频率:
   elapsed > 1/fire_rate_hz (0.1s) ?
   last_fire_time 更新
-  firecode: 96 ↔ 99 交替 (告知底盘发射机构)
+  FireCode.fire_status: 0 ↔ 3 交替 (告知底盘发射机构)
+  FireCode.raw: 由完整语义字段组合；兼容 controller 旧路径示例为 0x60 ↔ 0x63
 ```
 
 #### 步骤 4: 发布最终控制指令
@@ -924,8 +930,13 @@ GimbalAngles:
   yaw: 44.8   (float32 度)
   pitch: 11.3  (float32 度)
 
-UInt8 firecode:
-  data: 99
+FireCode:
+  fire_status: 3
+  cap_state: 0
+  follow_mode: false
+  aim_mode: true
+  rotate: 1
+  raw: 0x63  # 完整字节示例；实际开火判定看 fire_status
 ```
 
 ---
@@ -1089,7 +1100,7 @@ UInt8 firecode:
 │                        │    │   /ly/control/angles:               │
 │                        │    │     {yaw:44.8, pitch:11.3}         │
 │                        │    │   /ly/control/firecode:             │
-│                        │    │     {data:99}                      │
+│                        │    │     {fire_status:3, raw:0x63}      │
 └────────────────────────┘    └────────────────────────────────────┘
 ```
 
@@ -1107,7 +1118,7 @@ UInt8 firecode:
 | controller (选板) | 板位姿 | 板1: (2.546, 0.294, 0.439), yaw: -1.358 |
 | controller (TF变换) | 枪管坐标 | barrel: (2.789, -0.012, 0.478) |
 | controller (弹道) | 控制角度 | pitch: 0.197 rad (11.3°), yaw最终: 44.75° (相对world yaw) |
-| controller (输出) | 执行指令 | fire: true, GimbalAngles: {44.8°, 11.3°}, firecode: 99 |
+| controller (输出) | 执行指令 | fire: true, GimbalAngles: {44.8°, 11.3°}, FireCode.fire_status: 3 |
 
 ---
 

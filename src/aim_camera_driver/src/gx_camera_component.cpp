@@ -43,6 +43,33 @@ GX_BALANCE_WHITE_AUTO_ENTRY parse_auto_balance_mode(const std::string & mode)
   return GX_BALANCE_WHITE_AUTO_OFF;
 }
 
+bool get_bayer_filter(
+  GX_DEV_HANDLE device,
+  DX_PIXEL_COLOR_FILTER & bayer_filter)
+{
+  int64_t gx_filter = 0;
+  if (!gx_ok(GXGetEnum(device, GX_ENUM_PIXEL_COLOR_FILTER, &gx_filter))) {
+    return false;
+  }
+
+  switch (gx_filter) {
+    case GX_COLOR_FILTER_BAYER_RG:
+      bayer_filter = BAYERRG;
+      return true;
+    case GX_COLOR_FILTER_BAYER_GB:
+      bayer_filter = BAYERGB;
+      return true;
+    case GX_COLOR_FILTER_BAYER_GR:
+      bayer_filter = BAYERGR;
+      return true;
+    case GX_COLOR_FILTER_BAYER_BG:
+      bayer_filter = BAYERBG;
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace
 
 GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
@@ -243,6 +270,13 @@ bool GxCameraComponent::openGxDevice()
     RCLCPP_ERROR(get_logger(), "camera does not support color");
     return false;
   }
+
+  if (!get_bayer_filter(device_, bayer_filter_)) {
+    RCLCPP_ERROR(get_logger(), "failed to read a supported Bayer color filter");
+    return false;
+  }
+
+  RCLCPP_INFO(get_logger(), "camera Bayer color filter: %d", static_cast<int>(bayer_filter_));
   return true;
 }
 
@@ -392,20 +426,20 @@ void GxCameraComponent::publishFrame()
   msg->step = static_cast<uint32_t>(width_ * 3);
   msg->data.resize(static_cast<size_t>(msg->step) * static_cast<size_t>(msg->height));
 
-  // ----- Bayer BG Raw8 → BGR24 转换（直接写入 Image 的 data 缓冲区） -----
+  // ----- 相机实际 Bayer 排列 → BGR24 转换（直接写入 Image 的 data 缓冲区） -----
   DxRaw8toRGB24(
     static_cast<unsigned char *>(frame_buffer->pImgBuf),
     msg->data.data(),
     frame_buffer->nWidth,
     frame_buffer->nHeight,
     RAW2RGB_NEIGHBOUR,
-    DX_PIXEL_COLOR_FILTER(BAYERBG),
+    bayer_filter_,
     false);
 
   // DxRaw8toRGB24 输出 RGB，但 downstream 按 BGR 解码，交换 R/B 通道
-  for (size_t i = 0; i < msg->data.size(); i += 3) {
-    std::swap(msg->data[i], msg->data[i + 2]);
-  }
+  // for (size_t i = 0; i < msg->data.size(); i += 3) {
+  //   std::swap(msg->data[i], msg->data[i + 2]);
+  // }
 
   // 归还缓冲区
   GXQBuf(device_, frame_buffer);

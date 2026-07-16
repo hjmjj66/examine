@@ -6,7 +6,6 @@ gx_camera_node:
     image_topic: "/gx_camera_1/image_raw" # 原始图像话题
     camera_info_topic: "/gx_camera_1/camera_info" # 相机内参话题
     publish_rate: 100.0 # 图像发布频率（Hz）
-
     width: 1280 # 图像宽度（像素）
     height: 1024 # 图像高度（像素）
 

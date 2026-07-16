@@ -105,6 +105,7 @@ void AimOutpostPredictorNode::OutpostTracker::initialize(
   jumped_ = false;
   has_primary_slot_ = false;
   primary_slot_ = 0;
+  visible_slots_.fill(false);
   mismatch_streak_ = 0;
   update_count_ = 0;
   lost_count = 0;
@@ -129,6 +130,7 @@ void AimOutpostPredictorNode::OutpostTracker::predict(const rclcpp::Time & stamp
   if (!initialized_) {
     return;
   }
+  visible_slots_.fill(false);
 
   const double dt = std::max(0.0, (stamp - last_stamp_).seconds());
   last_stamp_ = stamp;
@@ -181,6 +183,7 @@ void AimOutpostPredictorNode::OutpostTracker::predict(const rclcpp::Time & stamp
 bool AimOutpostPredictorNode::OutpostTracker::update(const std::vector<ArmorMeasurement> & armors)
 {
   if (!initialized_ || armors.empty()) {
+    visible_slots_.fill(false);
     mismatch_streak_ = 0;
     return false;
   }
@@ -198,8 +201,17 @@ bool AimOutpostPredictorNode::OutpostTracker::update(const std::vector<ArmorMeas
   const auto slots_xyza = predictedArmorStates();
   const auto assignment = findBestAssignment(observations, slots_xyza);
   if (!assignment.valid) {
+    visible_slots_.fill(false);
     mismatch_streak_ = 0;
     return false;
+  }
+
+  visible_slots_.fill(false);
+  for (int i = 0; i < assignment.obs_count; ++i) {
+    const int slot = assignment.obs_to_slot[static_cast<std::size_t>(i)];
+    if (slot >= 0 && slot < kOutpostSlots) {
+      visible_slots_[static_cast<std::size_t>(slot)] = true;
+    }
   }
 
   const int obs_count = assignment.obs_count;
@@ -322,6 +334,12 @@ bool AimOutpostPredictorNode::OutpostTracker::hasPrimaryArmor() const
 int AimOutpostPredictorNode::OutpostTracker::primarySlot() const
 {
   return has_primary_slot_ ? primary_slot_ : -1;
+}
+
+const std::array<bool, 3> &
+AimOutpostPredictorNode::OutpostTracker::visibleSlots() const
+{
+  return visible_slots_;
 }
 
 double AimOutpostPredictorNode::OutpostTracker::nisFailureRatio() const
@@ -609,6 +627,7 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
   declare_parameter<std::string>("front_0_armor_pose_set_topic", "/aim_solver/front_0/armor_pose_sets");
   declare_parameter<std::string>("front_1_armor_pose_set_topic", "/aim_solver/front_1/armor_pose_sets");
   declare_parameter<double>("front_0_fallback_timeout_sec", 0.2);
+  declare_parameter<bool>("enable_front_1_fallback", false);
   declare_parameter<std::string>("outpost_state_topic", "/aim_outpost_predictor/outpost_state");
   declare_parameter<bool>("enable_visualization", false);
   declare_parameter<std::string>("visualization_topic", "/aim_outpost_predictor/visualization");
@@ -649,6 +668,7 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
     get_parameter("front_1_armor_pose_set_topic").as_string();
   front_0_fallback_timeout_sec_ = std::max(
     0.0, get_parameter("front_0_fallback_timeout_sec").as_double());
+  enable_front_1_fallback_ = get_parameter("enable_front_1_fallback").as_bool();
   outpost_state_topic_ = get_parameter("outpost_state_topic").as_string();
   enable_visualization_ = get_parameter("enable_visualization").as_bool();
   visualization_topic_ = get_parameter("visualization_topic").as_string();
@@ -688,6 +708,7 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
 
   tracker_.setConfig(tracker_config_);
   front_camera_arbitrator_.setFallbackTimeout(front_0_fallback_timeout_sec_);
+  front_camera_arbitrator_.setFallbackEnabled(enable_front_1_fallback_);
 
   const auto high_rate_qos = makeHighRateQos();
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
@@ -717,6 +738,9 @@ void AimOutpostPredictorNode::onArmorPoseSets(
   bool from_front_0,
   const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
 {
+  if (!from_front_0 && !enable_front_1_fallback_) {
+    return;
+  }
   const auto now = std::chrono::steady_clock::now();
   std::lock_guard<std::mutex> lock(tracker_mutex_);
   std::vector<ArmorMeasurement> measurements = extractMeasurements(msg);
@@ -842,6 +866,7 @@ void AimOutpostPredictorNode::processArmorPoseSets(
   state_msg.converged = tracker_.converged();
   state_msg.jumped = tracker_.jumped();
   state_msg.primary_slot = -1;
+  state_msg.visible_slots = {false, false, false};
 
   if (tracker_.active()) {
     const Eigen::VectorXd & x = tracker_.state();
@@ -859,6 +884,7 @@ void AimOutpostPredictorNode::processArmorPoseSets(
     state_msg.has_primary_armor = tracker_.hasPrimaryArmor();
     state_msg.primary_slot = static_cast<int8_t>(tracker_.primarySlot());
     state_msg.primary_armor = tracker_.primaryArmorPose();
+    state_msg.visible_slots = tracker_.visibleSlots();
     state_msg.predicted_armors = tracker_.predictedArmors();
   }
 

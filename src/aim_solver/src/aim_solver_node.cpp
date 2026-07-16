@@ -755,7 +755,7 @@ void AimSolverNode::sortPnPResult(
 
   const double roll0 = radianToAngle(limitRadian(
       rpy0[0], {-1.5707963267948966, 1.5707963267948966}));
-  if (roll0 > roll_thres_degree_) {
+  if (std::abs(roll0) > roll_thres_degree_) {
     return;
   }
 

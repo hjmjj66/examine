@@ -6,6 +6,7 @@
 #include <rclcpp/time.hpp>
 
 #include "aim_armor_controller/control_time_alignment.hpp"
+#include "aim_armor_controller/command_rate_limiter.hpp"
 #include "aim_armor_controller/outpost_tracking_hold.hpp"
 
 namespace
@@ -65,6 +66,27 @@ TEST(OutpostTrackingHold, HoldsOnlyCachedSelectedOutpostWithinTimeout)
   EXPECT_FALSE(aim_armor_controller::shouldHoldOutpostTarget(false, true, 0.01, 0.15));
   EXPECT_FALSE(aim_armor_controller::shouldHoldOutpostTarget(true, false, 0.01, 0.15));
   EXPECT_FALSE(aim_armor_controller::shouldHoldOutpostTarget(true, true, 0.151, 0.15));
+}
+
+TEST(CommandRateLimiter, LimitsYawAndPitchPerSecond)
+{
+  aim_armor_controller::CommandRateLimiter limiter;
+  limiter.setMaxRateDegPerSec(60.0);
+  limiter.reset(0.0, 0.0);
+
+  const auto result = limiter.update(90.0, -30.0, 0.1);
+  EXPECT_DOUBLE_EQ(result.yaw_deg, 6.0);
+  EXPECT_DOUBLE_EQ(result.pitch_deg, -6.0);
+}
+
+TEST(CommandRateLimiter, UsesShortestYawPathAcrossWrap)
+{
+  aim_armor_controller::CommandRateLimiter limiter;
+  limiter.setMaxRateDegPerSec(60.0);
+  limiter.reset(179.0, 0.0);
+
+  const auto result = limiter.update(-179.0, 0.0, 0.1);
+  EXPECT_DOUBLE_EQ(result.yaw_deg, 181.0);
 }
 
 }  // namespace

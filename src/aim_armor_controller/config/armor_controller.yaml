@@ -1,8 +1,8 @@
 armor_controller_node:
   ros__parameters:
-    front_0_target_states_topic: /aim_predictor/front_0/target_states # 前相机 0 目标状态输入
-    front_1_target_states_topic: /aim_predictor/front_1/target_states # 前相机 1 目标状态输入
-    back_target_states_topic: /aim_predictor/back/target_states # 后相机目标状态输入
+    front_0_target_states_topic: /aim_predictor/fused/target_states # 融合目标状态输入
+    front_1_target_states_topic: /aim_predictor/disabled/front_1 # 保留参数兼容，不参与控制
+    back_target_states_topic: /aim_predictor/disabled/back # 保留参数兼容，不参与控制
     outpost_state_topic: /aim_outpost_predictor/outpost_state # 前哨站状态输入
     selected_target_id_topic: /decider/selected_target_id # 决策模块选中的目标 ID
     aim_result_topic: /ly/aim/result # 瞄准结果输出
@@ -15,34 +15,35 @@ armor_controller_node:
     debug_selected_armor_index_topic: /armor_controller/debug/selected_armor_index # 选板索引调试输出
     publish_legacy_control_topics: true # 是否发布兼容控制话题
     # 手动开火模式：true 时不发布 /ly/control/firecode，交由外部手动控制开火
-    manual_fire_mode: true
+    manual_fire_mode: true # 是否禁止控制器发布开火码并交由外部手动开火
     publish_rate_hz: 100.0 # 控制循环频率（Hz）
     # 最大弹频（Hz），即每秒最多翻转几次 firecode
-    fire_rate_hz: 2.0
+    fire_rate_hz: 2.0 # 开火码翻转频率上限（Hz）
     bullet_speed_mps: 23.0 # 无实时弹速时使用的默认弹速（m/s）
     min_bullet_speed_mps: 20.0 # 允许使用的最小弹速（m/s）
     bullet_speed_alpha: 0.5 # 实时弹速低通滤波系数
-    tol_deltax_m: 0.05 # 弹道积分步长 X 方向（m）
-    tol_deltay_m: 0.05 # 弹道积分步长 Y 方向（m）
+    tol_deltax_m: 0.05 # 弹道积分 X 步长（当前控制器未使用）
+    tol_deltay_m: 0.05 # 弹道积分 Y 步长（当前控制器未使用）
     bullet_mass_kg: 0.0032 # 弹丸质量（kg）
     bullet_diameter_m: 0.0168 # 弹丸直径（m）
     max_iter: 100 # 弹道解算最大迭代次数
     tol: 1.0e-6 # 弹道解算收敛阈值
     # 控制解算目标坐标系：在该系下解 yaw/pitch（建议为俯仰关节 gimbal_barrel_joint）
-    barrel_joint_frame: gimbal_barrel_joint
+    barrel_joint_frame: gimbal_barrel_joint # 用于解算云台 yaw/pitch 的枪管关节坐标系
     # TF 查询超时时间，设为 0 表示不等待，查不到立即 fallback
-    target_tf_timeout_sec: 0.10
+    target_tf_timeout_sec: 0.10 # 目标 TF 查询超时时间（秒）
     # 目标消息超过该时长未更新则直接 fallback，避免使用陈旧时间戳反复查 TF
-    target_msg_timeout_sec: 0.30
+    target_msg_timeout_sec: 0.30 # 目标消息超过该时长未更新则回退（秒）
     # 短暂丢失前哨 tracking 时保持最近有效目标，期间不允许开火。
-    outpost_tracking_hold_sec: 0.10
-    armor_select_area_weight: 1.0 # 选板时装甲板面积权重
-    armor_select_angle_weight: 0.0 # 选板时瞄准角误差权重
+    outpost_tracking_hold_sec: 0.10 # 前哨短暂丢跟踪时保持目标的时间（秒）
+    max_angle_rate_deg_per_sec: 60.0 # 控制角最大变化速度（yaw/pitch 共用，度/秒）
+    armor_select_area_weight: 1.0 # 选板面积权重（当前控制器未使用）
+    armor_select_angle_weight: 0.0 # 选板瞄准角误差权重（当前控制器未使用）
     include_processing_delay: true # 预测时间是否计入消息处理延迟
     system_response_time_sec: 0.0 # 云台与发射系统响应延迟（秒）
     max_prediction_iterations: 10 # 预测与飞行时间耦合迭代上限
     fly_time_converge_threshold_sec: 0.001 # 飞行时间迭代收敛阈值（秒）
-    max_processing_delay_sec: 0.2 # 计入预测的最大处理延迟（秒）
+    max_processing_delay_sec: 0.3 # 计入预测的最大处理延迟（秒）
     max_predict_time_sec: 1.0 # 允许的最大预测时间（秒）
     shoot_yaw_tolerance_deg: 1.0 # 允许开火的偏航误差（度）
     shoot_pitch_tolerance_deg: 1.0 # 允许开火的俯仰误差（度）
@@ -52,13 +53,13 @@ armor_controller_node:
     # —— 智能选板参数（移植自 ly_aim controller）——
     # enable_smart_selector: true 时使用装甲板旋转方向和角速度动态选板
     # false 时 fallback 到最近距离选择
-    enable_smart_selector: true
+    enable_smart_selector: true # 是否启用智能选板（当前控制器未使用该开关）
     # 到来角 (°)：装甲板朝向与 center_yaw 之差小于此角度才视为正面候选
-    comming_angle_deg: 60.0
+    comming_angle_deg: 60.0 # 旋转装甲板进入候选区的角度门限（度）
     # 离开角 (°)：装甲板正在转来时的角度阈值，更宽松以留出余量
-    leaving_angle_deg: 20.0
+    leaving_angle_deg: 20.0 # 旋转装甲板离开候选区的角度门限（度）
     # 慢速旋转角速度阈值 (rad/s)：低于此值用"最正面选择"策略，高于此值用"正在转来"策略
-    smart_selector_max_angular_velocity: 2.0
+    smart_selector_max_angular_velocity: 2.0 # 智能选板慢速角速度阈值（当前控制器未使用）
     outpost_shoot_yaw_gate_deg: 45.0 # 前哨站允许开火的装甲板朝向窗口（度）
 
     # 与 ros2_ly_ws_sentry/src/predictor 内 Controller 一致：射击表、目标点偏置

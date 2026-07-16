@@ -14,7 +14,6 @@ find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(gimbal_driver REQUIRED)
 #find_package(gimbal_driver REQUIRED)
-find_package(aim_target_msgs REQUIRED)
 find_package(sentry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
@@ -35,7 +34,6 @@ ament_target_dependencies(armor_controller_node
   geometry_msgs
   gimbal_driver
 #  gimbal_driver
-  aim_target_msgs
   sentry_msgs
   std_msgs
 )
@@ -66,6 +64,21 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_control_time_alignment
     builtin_interfaces
     rclcpp)
+
+  ament_add_gtest(test_outpost_selection
+    test/test_outpost_selection.cpp)
+  target_include_directories(test_outpost_selection PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../aim_outpost_predictor/include>)
+  ament_target_dependencies(test_outpost_selection
+    aim_msgs
+    geometry_msgs
+    rclcpp)
+
+  ament_add_gtest(test_fire_code_state
+    test/test_fire_code_state.cpp)
+  target_include_directories(test_fire_code_state PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 endif()
 
 ament_package()

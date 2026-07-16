@@ -114,6 +114,7 @@ private:
     [[nodiscard]] bool jumped() const;
     [[nodiscard]] bool hasPrimaryArmor() const;
     [[nodiscard]] int primarySlot() const;
+    [[nodiscard]] const std::array<bool, 3> & visibleSlots() const;
     [[nodiscard]] double nisFailureRatio() const;
     [[nodiscard]] const Eigen::VectorXd & state() const;
     [[nodiscard]] std::vector<geometry_msgs::msg::Pose> predictedArmors() const;
@@ -154,6 +155,7 @@ private:
     bool jumped_{false};
     bool has_primary_slot_{false};
     int primary_slot_{0};
+    std::array<bool, kOutpostSlots> visible_slots_{{false, false, false}};
     int mismatch_streak_{0};
     int update_count_{0};
     TrackerConfig config_;
@@ -205,6 +207,7 @@ private:
   int min_consecutive_detections_to_track_{1};
   double max_nis_failure_ratio_{0.4};
   double front_0_fallback_timeout_sec_{0.2};
+  bool enable_front_1_fallback_{false};
   TrackerConfig tracker_config_;
   OutpostTracker tracker_;
   FrontCameraArbitrator front_camera_arbitrator_;

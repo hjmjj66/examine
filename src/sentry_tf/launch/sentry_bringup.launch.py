@@ -95,6 +95,10 @@ def generate_launch_description():
             {"params_file": predictor_params},
         ),
         include_launch(
+            "aim_outpost_predictor",
+            "aim_outpost_predictor.launch.py",
+        ),
+        include_launch(
             "aim_armor_decider",
             "aim_decider.launch.py",
             {"params_file": decider_params},

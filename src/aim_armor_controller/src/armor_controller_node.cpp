@@ -14,7 +14,6 @@
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/int32.hpp>
-#include <std_msgs/msg/u_int8.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>
@@ -22,6 +21,8 @@
 #include <tf2_ros/transform_listener.h>
 
 #include "aim_armor_controller/control_time_alignment.hpp"
+#include "aim_armor_controller/command_rate_limiter.hpp"
+#include "aim_armor_controller/fire_code_state.hpp"
 #include "aim_armor_controller/legacy_fire_control.hpp"
 #include "aim_armor_controller/outpost_tracking_hold.hpp"
 #include "aim_armor_controller/legacy_target_model.hpp"
@@ -87,17 +88,19 @@ struct ActiveTarget
   bool valid{false};
 };
 
-gimbal_driver::msg::FireCode makeFireCodeMsg(const rclcpp::Time & stamp, std::uint8_t raw)
+gimbal_driver::msg::FireCode makeFireCodeMsg(
+  const rclcpp::Time & stamp,
+  const aim_armor_controller::FireCodeState & state)
 {
   gimbal_driver::msg::FireCode msg;
   msg.header.stamp = stamp;
   msg.field_mask = gimbal_driver::msg::FireCode::FIELD_ALL;
-  msg.fire_status = static_cast<std::uint8_t>(raw & 0x03U);
-  msg.cap_state = static_cast<std::uint8_t>((raw >> 2U) & 0x03U);
-  msg.follow_mode = ((raw >> 4U) & 0x01U) != 0U;
-  msg.aim_mode = ((raw >> 5U) & 0x01U) != 0U;
-  msg.rotate = static_cast<std::uint8_t>((raw >> 6U) & 0x03U);
-  msg.raw = raw;
+  msg.fire_status = static_cast<std::uint8_t>(state.fire_status & 0x03U);
+  msg.cap_state = static_cast<std::uint8_t>(state.cap_state & 0x03U);
+  msg.follow_mode = state.follow_mode;
+  msg.aim_mode = state.aim_mode;
+  msg.rotate = static_cast<std::uint8_t>(state.rotate & 0x03U);
+  msg.raw = aim_armor_controller::encodeFireCodeRaw(state);
   return msg;
 }
 
@@ -162,6 +165,7 @@ public:
     declare_parameter<double>("target_tf_timeout_sec", 0.02);
     declare_parameter<double>("target_msg_timeout_sec", 0.10);
     declare_parameter<double>("outpost_tracking_hold_sec", 0.15);
+    declare_parameter<double>("max_angle_rate_deg_per_sec", 60.0);
     declare_parameter<double>("armor_select_area_weight", 1.0);
     declare_parameter<double>("armor_select_angle_weight", 1.0);
     declare_parameter<bool>("include_processing_delay", true);
@@ -226,6 +230,9 @@ public:
     target_tf_timeout_sec_ = get_parameter("target_tf_timeout_sec").as_double();
     target_msg_timeout_sec_ = get_parameter("target_msg_timeout_sec").as_double();
     outpost_tracking_hold_sec_ = get_parameter("outpost_tracking_hold_sec").as_double();
+    max_angle_rate_deg_per_sec_ =
+      get_parameter("max_angle_rate_deg_per_sec").as_double();
+    command_rate_limiter_.setMaxRateDegPerSec(max_angle_rate_deg_per_sec_);
     armor_select_area_weight_ = get_parameter("armor_select_area_weight").as_double();
     armor_select_angle_weight_ = get_parameter("armor_select_angle_weight").as_double();
     include_processing_delay_ = get_parameter("include_processing_delay").as_bool();
@@ -502,31 +509,55 @@ private:
     return true;
   }
 
-  void publishFallback(const GimbalState & gimbal)
+  void publishFallback(const GimbalState & gimbal, const std::string & reason)
   {
     const rclcpp::Time stamp =
       aim_armor_controller::resolveControlStamp(gimbal.stamp, now());
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "fallback: reason=%s gimbal=(%.3f, %.3f) control_stamp=%.9f",
+      reason.c_str(), static_cast<double>(gimbal.yaw_deg),
+      static_cast<double>(gimbal.pitch_deg), stamp.seconds());
+    const auto command = limitCommandAngles(
+      static_cast<double>(gimbal.yaw_deg), static_cast<double>(gimbal.pitch_deg),
+      gimbal, stamp);
 
     sentry_msgs::msg::AimResult aim_msg;
     aim_msg.header.stamp = stamp;
     aim_msg.header.frame_id = barrel_joint_frame_;
     aim_msg.follow = false;
     aim_msg.fire = false;
-    aim_msg.yaw = gimbal.yaw_deg;
-    aim_msg.pitch = gimbal.pitch_deg;
+    aim_msg.yaw = static_cast<float>(command.yaw_deg);
+    aim_msg.pitch = static_cast<float>(command.pitch_deg);
     aim_result_pub_->publish(aim_msg);
 
     if (publish_legacy_control_topics_ && angle_pub_) {
       gimbal_driver::msg::GimbalAngles angle_msg;
       angle_msg.header.stamp = stamp;
-      angle_msg.yaw = gimbal.yaw_deg;
-      angle_msg.pitch = gimbal.pitch_deg;
+      angle_msg.yaw = static_cast<float>(command.yaw_deg);
+      angle_msg.pitch = static_cast<float>(command.pitch_deg);
       angle_pub_->publish(angle_msg);
     }
 
     if (publish_legacy_control_topics_ && !manual_fire_mode_ && fire_pub_) {
-      fire_pub_->publish(makeFireCodeMsg(now(), last_firecode_out_));
+      fire_pub_->publish(makeFireCodeMsg(now(), fire_code_state_));
     }
+  }
+
+  aim_armor_controller::CommandAngles limitCommandAngles(
+    double desired_yaw_deg, double desired_pitch_deg,
+    const GimbalState & gimbal, const rclcpp::Time & stamp)
+  {
+    if (!command_rate_limiter_initialized_) {
+      command_rate_limiter_.reset(
+        static_cast<double>(gimbal.yaw_deg), static_cast<double>(gimbal.pitch_deg));
+      last_command_limit_stamp_ = stamp;
+      command_rate_limiter_initialized_ = true;
+    }
+
+    const double dt_sec = std::max(0.0, (stamp - last_command_limit_stamp_).seconds());
+    last_command_limit_stamp_ = stamp;
+    return command_rate_limiter_.update(desired_yaw_deg, desired_pitch_deg, dt_sec);
   }
 
   bool transformWorldToBarrel(
@@ -580,6 +611,52 @@ private:
            target_msg_timeout_sec_;
   }
 
+  std::string activeTargetFailureReason(
+    const SelectedTargetIdCache & selected_target,
+    const TargetStateArrayCache & front_0,
+    const TargetStateArrayCache & front_1,
+    const TargetStateArrayCache & back,
+    const OutpostStateCache & outpost,
+    const rclcpp::Time & control_stamp) const
+  {
+    if (!selected_target.valid) {
+      return "selected_target_cache_missing";
+    }
+    if (!selected_target.msg.valid) {
+      return "selected_target_message_invalid";
+    }
+
+    const std::uint8_t outpost_id = outpost.valid ? outpost.msg.id : kDefaultOutpostId;
+    if (selected_target.msg.id == outpost_id) {
+      if (!outpost.valid) {
+        return "outpost_state_missing";
+      }
+      if (!outpost.msg.tracking) {
+        return "outpost_not_tracking";
+      }
+      if (!outpost.msg.converged) {
+        return "outpost_not_converged";
+      }
+      if (isTimedOut(outpost.msg.header.stamp, control_stamp)) {
+        return "outpost_message_timeout";
+      }
+      return "outpost_active_target_resolution_failed";
+    }
+
+    const auto match = aim_armor_controller::selectBestTargetStateMatch(
+      selected_target.msg.id,
+      front_0.valid ? &front_0.msg : nullptr,
+      front_1.valid ? &front_1.msg : nullptr,
+      back.valid ? &back.msg : nullptr);
+    if (!match.has_value()) {
+      return "selected_target_not_found_in_target_states";
+    }
+    if (isTimedOut(match->header.stamp, control_stamp)) {
+      return "selected_target_message_timeout";
+    }
+    return "active_target_resolution_failed";
+  }
+
   double measurementAgeFromStamp(
     const builtin_interfaces::msg::Time & stamp,
     const rclcpp::Time & control_stamp) const
@@ -602,7 +679,7 @@ private:
 
     const std::uint8_t outpost_id = outpost.valid ? outpost.msg.id : kDefaultOutpostId;
     if (selected_target.msg.id == outpost_id) {
-      if (!outpost.valid || !outpost.msg.tracking ||
+      if (!outpost.valid || !outpost.msg.tracking || !outpost.msg.converged ||
         isTimedOut(outpost.msg.header.stamp, control_stamp))
       {
         return active;
@@ -683,8 +760,10 @@ private:
     const GimbalState & gimbal,
     const rclcpp::Time & control_stamp,
     ArmorCandidate & selected,
-    aim_armor_controller::LegacyTargetModel & best_target)
+    aim_armor_controller::LegacyTargetModel & best_target,
+    std::string & failure_reason)
   {
+    failure_reason.clear();
     const auto & target = active_target.model;
     best_target = target;
 
@@ -695,6 +774,7 @@ private:
         target.center.x, target.center.y, target.center.z, active_target.source_frame,
         center_bx, center_by, center_bz, control_stamp))
     {
+      failure_reason = "center_tf_lookup_failed";
       return false;
     }
 
@@ -704,6 +784,7 @@ private:
     if (!calcPitchYawWithShootTable(
         center_pitch, center_yaw, center_time, center_bx, center_by, center_bz))
     {
+      failure_reason = "center_ballistic_solve_failed";
       return false;
     }
 
@@ -718,6 +799,7 @@ private:
       max_processing_delay_sec_ > 0.0 &&
       timing.processing_delay_sec > max_processing_delay_sec_)
     {
+      failure_reason = "processing_delay_exceeded_max";
       return false;
     }
     const double predict_time =
@@ -735,9 +817,11 @@ private:
       auto predicted_target = target;
       aim_armor_controller::predictLegacyTarget(predicted_target, predict_time);
       final_aim = aim_armor_controller::chooseLegacyAimPoint(
-        predicted_target, &low_speed_selection_target, lock_index_, comming_angle_rad_,
+        predicted_target, &low_speed_selection_target, lock_index_, enable_smart_selector_,
+        smart_selector_max_angular_velocity_, comming_angle_rad_,
         leaving_angle_rad_);
       if (!final_aim.valid) {
+        failure_reason = "outpost_armor_selection_failed_no_visible_slot";
         return false;
       }
       selected_idx = final_aim.armor_index;
@@ -752,9 +836,11 @@ private:
         aim_armor_controller::chooseLegacySpinCenterAimPoint(
           predicted_target, shoot_face_tolerance_rad_) :
         aim_armor_controller::chooseLegacyAimPoint(
-          predicted_target, &low_speed_selection_target, lock_index_, comming_angle_rad_,
+          predicted_target, &low_speed_selection_target, lock_index_, enable_smart_selector_,
+          smart_selector_max_angular_velocity_, comming_angle_rad_,
           leaving_angle_rad_);
       if (!aim_candidate.valid) {
+        failure_reason = "normal_armor_selection_failed";
         return false;
       }
 
@@ -778,9 +864,11 @@ private:
           aim_armor_controller::chooseLegacySpinCenterAimPoint(
             candidate_target, shoot_face_tolerance_rad_) :
           aim_armor_controller::chooseLegacyAimPoint(
-            candidate_target, &low_speed_selection_target, lock_index_, comming_angle_rad_,
+            candidate_target, &low_speed_selection_target, lock_index_, enable_smart_selector_,
+            smart_selector_max_angular_velocity_, comming_angle_rad_,
             leaving_angle_rad_);
         if (!aim_candidate.valid) {
+          failure_reason = "normal_iterative_armor_selection_failed";
           return false;
         }
 
@@ -791,6 +879,7 @@ private:
             aim_candidate.point_world.x, aim_candidate.point_world.y, aim_candidate.point_world.z,
             active_target.source_frame, aim_bx, aim_by, aim_bz, control_stamp))
         {
+          failure_reason = "candidate_tf_lookup_failed";
           return false;
         }
 
@@ -800,6 +889,7 @@ private:
         if (!calcPitchYawWithShootTable(
             iter_pitch, iter_yaw, iter_fly_time, aim_bx, aim_by, aim_bz))
         {
+          failure_reason = "candidate_ballistic_solve_failed";
           return false;
         }
 
@@ -814,11 +904,32 @@ private:
     }
 
     if (selected_idx < 0 || !final_aim.valid) {
+      failure_reason = "candidate_invalid_after_selection";
       return false;
+    }
+    if (active_target.is_outpost) {
+      const auto armors = aim_armor_controller::buildLegacyArmors(best_target);
+      if (selected_idx >= static_cast<int>(armors.size())) {
+        failure_reason = "selected_armor_index_out_of_range";
+        return false;
+      }
+      const double facing_error = std::abs(aim_armor_controller::legacyArmorFacingError(
+        best_target, armors[static_cast<std::size_t>(selected_idx)]));
+      if (outpost_shoot_yaw_gate_rad_ > 0.0 &&
+        facing_error > outpost_shoot_yaw_gate_rad_) {
+        failure_reason = "outpost_facing_gate_rejected";
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "fallback detail: outpost facing_error=%.3f deg gate=%.3f deg armor_index=%d",
+          facing_error * 180.0 / kPi,
+          outpost_shoot_yaw_gate_rad_ * 180.0 / kPi, selected_idx);
+        return false;
+      }
     }
     if (!buildCandidateFromAimPoint(
         final_aim.point_world, active_target.source_frame, control_stamp, gimbal, selected))
     {
+      failure_reason = "final_candidate_build_failed";
       return false;
     }
     selected.armor_index = selected_idx;
@@ -866,6 +977,9 @@ private:
     }
 
     if (!gimbal.valid) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "fallback: reason=gimbal_feedback_missing");
       return;
     }
 
@@ -884,7 +998,12 @@ private:
       const double elapsed_sec = has_last_valid_outpost_target_ ?
         std::max(0.0, (control_stamp - last_valid_outpost_control_stamp_).seconds()) :
         std::numeric_limits<double>::infinity();
+      const bool outpost_has_visible_slot =
+        outpost.valid && std::any_of(
+        outpost.msg.visible_slots.begin(), outpost.msg.visible_slots.end(),
+        [](bool visible) { return visible; });
       if (
+        outpost_has_visible_slot &&
         aim_armor_controller::shouldHoldOutpostTarget(
           selected_outpost, has_last_valid_outpost_target_, elapsed_sec, outpost_tracking_hold_sec_) &&
         !isTimedOut(last_valid_outpost_target_.model.header.stamp, control_stamp))
@@ -893,19 +1012,28 @@ private:
         active_target.measurement_age_sec =
           measurementAgeFromStamp(active_target.model.header.stamp, control_stamp);
         active_target.tracking_hold = true;
-      } else if (!selected_outpost || elapsed_sec > outpost_tracking_hold_sec_) {
+      } else if (!selected_outpost || !outpost_has_visible_slot ||
+        elapsed_sec > outpost_tracking_hold_sec_) {
         has_last_valid_outpost_target_ = false;
       }
     }
     if (!active_target.valid) {
-      publishFallback(gimbal);
+      publishFallback(
+        gimbal,
+        activeTargetFailureReason(
+          selected_target, front_0, front_1, back, outpost, control_stamp));
       return;
     }
 
     ArmorCandidate selected;
     aim_armor_controller::LegacyTargetModel best_target;
-    if (!selectArmorCandidate(active_target, gimbal, control_stamp, selected, best_target)) {
-      publishFallback(gimbal);
+    std::string failure_reason;
+    if (!selectArmorCandidate(
+        active_target, gimbal, control_stamp, selected, best_target, failure_reason))
+    {
+      publishFallback(
+        gimbal,
+        failure_reason.empty() ? "armor_candidate_selection_failed" : failure_reason);
       return;
     }
 
@@ -971,14 +1099,22 @@ private:
     };
     const auto fire_control_output = aim_armor_controller::evaluateLegacyFireControl(
       fire_control_input, legacy_fire_control_state_);
+    const auto command = limitCommandAngles(
+      selected.yaw_actual_want_deg, selected.pitch_actual_want_deg, gimbal, control_stamp);
 
     if (publish_legacy_control_topics_ && angle_pub_) {
       gimbal_driver::msg::GimbalAngles angle_msg;
       angle_msg.header.stamp = control_stamp;
-      angle_msg.yaw = static_cast<float>(selected.yaw_actual_want_deg);
-      angle_msg.pitch = static_cast<float>(selected.pitch_actual_want_deg);
+      angle_msg.yaw = static_cast<float>(command.yaw_deg);
+      angle_msg.pitch = static_cast<float>(command.pitch_deg);
       angle_pub_->publish(angle_msg);
     }
+
+    // The legacy direct-control path explicitly enables aim mode and the
+    // existing low rotate level. These fields are independent of the
+    // fire_status 0 <-> 3 toggle.
+    fire_code_state_.aim_mode = true;
+    fire_code_state_.rotate = 1U;
 
     bool fire_this_tick = false;
     if (
@@ -987,7 +1123,7 @@ private:
     {
       const double elapsed = (now() - last_fire_time_).seconds();
       if (elapsed >= 1.0 / fire_rate_hz_) {
-        last_firecode_out_ = (last_firecode_out_ == 99) ? 96 : 99;
+        aim_armor_controller::toggleFireStatus(fire_code_state_);
         last_fire_time_ = now();
         fire_this_tick = true;
       }
@@ -1000,12 +1136,12 @@ private:
     // independently below and must not be used as the follow signal.
     aim_msg.follow = true;
     aim_msg.fire = fire_this_tick;
-    aim_msg.pitch = static_cast<float>(selected.pitch_actual_want_deg);
-    aim_msg.yaw = static_cast<float>(selected.yaw_actual_want_deg);
+    aim_msg.pitch = static_cast<float>(command.pitch_deg);
+    aim_msg.yaw = static_cast<float>(command.yaw_deg);
     aim_result_pub_->publish(aim_msg);
 
     if (publish_legacy_control_topics_ && !manual_fire_mode_ && fire_pub_) {
-      fire_pub_->publish(makeFireCodeMsg(now(), last_firecode_out_));
+      fire_pub_->publish(makeFireCodeMsg(now(), fire_code_state_));
     }
   }
 
@@ -1030,6 +1166,7 @@ private:
   double target_tf_timeout_sec_{0.02};
   double target_msg_timeout_sec_{0.10};
   double outpost_tracking_hold_sec_{0.15};
+  double max_angle_rate_deg_per_sec_{60.0};
   double armor_select_area_weight_{1.0};
   double armor_select_angle_weight_{1.0};
   bool include_processing_delay_{true};
@@ -1059,10 +1196,13 @@ private:
   double bullet_diameter_{16.8e-3};
   int max_iter_{100};
   double tol_{1e-6};
-  std::uint8_t last_firecode_out_{0};
+  aim_armor_controller::FireCodeState fire_code_state_{};
   rclcpp::Time last_fire_time_{0, 0, RCL_ROS_TIME};
   double fire_rate_hz_{10.0};
   aim_armor_controller::LegacyFireControlState legacy_fire_control_state_{};
+  aim_armor_controller::CommandRateLimiter command_rate_limiter_;
+  rclcpp::Time last_command_limit_stamp_{0, 0, RCL_ROS_TIME};
+  bool command_rate_limiter_initialized_{false};
 
   rclcpp::Publisher<sentry_msgs::msg::AimResult>::SharedPtr aim_result_pub_;
   rclcpp::Publisher<aim_msgs::msg::Armor>::SharedPtr selected_armor_pub_;

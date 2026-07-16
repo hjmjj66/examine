@@ -91,10 +91,33 @@ if(GXIAPI_INCLUDE_DIR AND GXIAPI_LIB)
     "aim_camera_driver::GxCameraComponent"
   )
 
+  add_executable(gx_camera_rate_probe
+    tools/gx_camera_rate_probe.cpp
+  )
+
+  target_compile_features(gx_camera_rate_probe PUBLIC cxx_std_17)
+  target_include_directories(gx_camera_rate_probe PRIVATE
+    ${GXIAPI_INCLUDE_DIR}
+  )
+
+  ament_target_dependencies(gx_camera_rate_probe
+    rclcpp
+    sensor_msgs
+  )
+
+  target_link_libraries(gx_camera_rate_probe
+    ${GXIAPI_LIB}
+  )
+
   install(TARGETS
     aim_gx_camera_component
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
+  )
+
+  install(TARGETS
+    gx_camera_rate_probe
+    DESTINATION lib/${PROJECT_NAME}
   )
 else()
   message(WARNING

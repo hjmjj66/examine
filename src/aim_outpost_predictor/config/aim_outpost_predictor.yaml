@@ -2,16 +2,16 @@ aim_outpost_predictor_node:
   ros__parameters:
     front_0_armor_pose_set_topic: "/aim_solver/front_0/armor_pose_sets" # 前相机 0 位姿输入
     front_1_armor_pose_set_topic: "/aim_solver/front_1/armor_pose_sets" # 前相机 1 位姿输入
-    front_0_fallback_timeout_sec: 0.2 # 前相机 0 无数据时的回退超时
+    front_0_fallback_timeout_sec: 9999.9 # 前相机 0 无数据时的回退超时，原为0.2
     outpost_state_topic: "/aim_outpost_predictor/outpost_state" # 前哨站状态输出
-    enable_visualization: true # 是否发布可视化
+    enable_visualization: false # 是否发布可视化
     visualization_topic: "/aim_outpost_predictor/visualization" # 可视化话题
     world_frame_id: "gimbal_world" # 世界坐标系
     gimbal_frame_id: "gimbal_small_yaw" # 云台坐标系
     tf_lookup_timeout_sec: 0.01 # TF 查询超时（秒）
     armor_gimbal_yaw_gate_deg: 70.0 # 接受装甲板的云台偏航门限（度）
     outpost_id: 6 # 前哨站目标 ID
-    max_lost_count: 75 # 连续丢失多少帧后删除跟踪
+    max_lost_count: 15 # 连续丢失多少帧后删除跟踪
     min_consecutive_detections_to_track: 2 # 建立跟踪所需连续检测次数
     max_nis_failure_ratio: 0.4 # NIS 检验失败比例上限
     init_radius: 0.2765 # 初始轨道半径（米）

@@ -23,6 +23,11 @@ public:
     fallback_timeout_ = std::chrono::duration<double>(fallback_timeout_sec);
   }
 
+  void setFallbackEnabled(bool enabled)
+  {
+    fallback_enabled_ = enabled;
+  }
+
   bool shouldProcessFront0(bool has_outpost_observation, TimePoint now)
   {
     if (has_outpost_observation) {
@@ -34,12 +39,14 @@ public:
 
   bool shouldProcessFront1(TimePoint now) const
   {
-    return now - last_front_0_observation_time_ >= fallback_timeout_;
+    return fallback_enabled_ &&
+           now - last_front_0_observation_time_ >= fallback_timeout_;
   }
 
 private:
   std::chrono::duration<double> fallback_timeout_;
   TimePoint last_front_0_observation_time_;
+  bool fallback_enabled_{true};
 };
 
 }  // namespace aim_outpost_predictor

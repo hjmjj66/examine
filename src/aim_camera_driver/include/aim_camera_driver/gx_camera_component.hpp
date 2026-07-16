@@ -8,6 +8,7 @@
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
 
+#include "DxImageProc.h"
 #include "GxAPI.h"
 
 namespace aim_camera_driver
@@ -36,6 +37,7 @@ private:
   GX_DEV_HANDLE device_{nullptr};
   bool lib_initialized_{false};
   bool stream_on_{false};
+  DX_PIXEL_COLOR_FILTER bayer_filter_{BAYERBG};
 
   // ---- 相机配置 ----
   std::string device_sn_{"auto"};

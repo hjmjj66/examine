@@ -113,6 +113,7 @@ public:
     declare_parameter<std::string>(
       "selected_target_id_topic", "/decider/selected_target_id");
     declare_parameter<double>("select_target_timeout_sec", 0.5);
+    declare_parameter<bool>("auto_select_nearest", false);
     declare_parameter<int>("outpost_target_id", 6);
     declare_parameter<bool>("default_select_outpost_when_no_external_target", false);
 
@@ -125,6 +126,7 @@ public:
     const auto selected_target_id_topic =
       get_parameter("selected_target_id_topic").as_string();
     select_target_timeout_sec_ = get_parameter("select_target_timeout_sec").as_double();
+    auto_select_nearest_ = get_parameter("auto_select_nearest").as_bool();
     outpost_target_id_ = static_cast<uint8_t>(get_parameter("outpost_target_id").as_int());
     default_select_outpost_when_no_external_target_ =
       get_parameter("default_select_outpost_when_no_external_target").as_bool();
@@ -163,6 +165,9 @@ public:
 private:
   void onSelectTarget(const sentry_msgs::msg::AimTarget::ConstSharedPtr msg)
   {
+    if (auto_select_nearest_) {
+      return;
+    }
     if (!msg) {
       return;
     }
@@ -319,6 +324,9 @@ private:
       return nullptr;
     }
 
+    if (auto_select_nearest_) {
+      return nearestCandidate(candidates);
+    }
     if (selectTargetFresh()) {
       auto it = std::find_if(
         candidates.begin(), candidates.end(),
@@ -328,7 +336,7 @@ private:
       }
     }
 
-    return nearestCandidate(candidates);
+    return nullptr;
   }
 
   void processLatestLocked()
@@ -343,7 +351,7 @@ private:
     }
 
     const auto default_outpost_candidate =
-      !selectTargetFresh() ? defaultOutpostCandidate() : std::nullopt;
+      auto_select_nearest_ ? defaultOutpostCandidate() : std::nullopt;
 
     auto front_candidates = collectFrontCandidates();
     if (default_outpost_candidate.has_value()) {
@@ -379,6 +387,7 @@ private:
   rclcpp::Time selected_target_updated_at_{0, 0, RCL_ROS_TIME};
   double select_target_timeout_sec_{0.5};
   bool default_select_outpost_when_no_external_target_{false};
+  bool auto_select_nearest_{false};
 
   std::mutex data_mutex_;
   aim_msgs::msg::TargetStateArray::ConstSharedPtr latest_front_0_;

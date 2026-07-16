@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -42,6 +43,7 @@ struct LegacyTargetModel
   int armor_count{4};
   bool has_primary_armor{false};
   int primary_slot{-1};
+  std::array<bool, 3> visible_slots{{false, false, false}};
 };
 
 struct LegacyAimCandidate
@@ -124,6 +126,7 @@ inline LegacyTargetModel legacyTargetModelFromOutpostState(const aim_msgs::msg::
   model.armor_count = 3;
   model.has_primary_armor = target.has_primary_armor;
   model.primary_slot = target.primary_slot;
+  model.visible_slots = target.visible_slots;
   return model;
 }
 
@@ -203,7 +206,8 @@ inline LegacyAimCandidate makeLegacyAimCandidate(const LegacyTargetModel & targe
   return candidate;
 }
 
-inline std::optional<int> chooseLegacyOutpostArmorIndex(const LegacyTargetModel & target)
+inline std::optional<int> chooseLegacyOutpostArmorIndex(
+  const LegacyTargetModel & target, double facing_gate_rad = 0.0)
 {
   const auto armors = buildLegacyArmors(target);
   if (armors.empty()) {
@@ -213,11 +217,18 @@ inline std::optional<int> chooseLegacyOutpostArmorIndex(const LegacyTargetModel 
   int best_index = 0;
   double best_yaw_error = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < armors.size(); ++i) {
+    if (i >= target.visible_slots.size() || !target.visible_slots[i]) {
+      continue;
+    }
     const double yaw_error = std::abs(legacyArmorFacingError(target, armors[i]));
     if (yaw_error < best_yaw_error) {
       best_yaw_error = yaw_error;
       best_index = static_cast<int>(i);
     }
+  }
+  if (!std::isfinite(best_yaw_error) ||
+      (facing_gate_rad > 0.0 && best_yaw_error > facing_gate_rad)) {
+    return std::nullopt;
   }
   return best_index;
 }
@@ -271,6 +282,8 @@ inline LegacyAimCandidate chooseLegacyAimPoint(
   const LegacyTargetModel & target,
   const LegacyTargetModel * low_speed_selection_target,
   double & lock_index,
+  bool enable_smart_selector,
+  double smart_selector_max_angular_velocity,
   double comming_angle_rad,
   double leaving_angle_rad)
 {
@@ -298,8 +311,9 @@ inline LegacyAimCandidate chooseLegacyAimPoint(
     return candidate;
   }
 
-  constexpr double kLowSpeedAngularVelocityThreshold = 2.0;
-  if (std::abs(target.angular_velocity) <= kLowSpeedAngularVelocityThreshold) {
+  if (!enable_smart_selector ||
+    std::abs(target.angular_velocity) <= std::abs(smart_selector_max_angular_velocity))
+  {
     const LegacyTargetModel & selection_target =
       low_speed_selection_target != nullptr ? *low_speed_selection_target : target;
     const auto selected_index = chooseLegacyLowSpeedArmorIndex(selection_target, lock_index);
