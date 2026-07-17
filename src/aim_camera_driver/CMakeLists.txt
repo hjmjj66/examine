@@ -6,6 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(aim_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -15,6 +16,7 @@ find_package(std_msgs REQUIRED)
 
 set(COMMON_DEPENDENCIES
   cv_bridge
+  aim_msgs
   rclcpp
   rclcpp_components
   sensor_msgs
@@ -141,7 +143,15 @@ install(DIRECTORY config
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+  ament_add_gtest(test_gx_timestamp_mapper
+    test/test_gx_timestamp_mapper.cpp
+  )
+  if(TARGET test_gx_timestamp_mapper)
+    target_include_directories(test_gx_timestamp_mapper PRIVATE include)
+    ament_target_dependencies(test_gx_timestamp_mapper rclcpp)
+  endif()
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()

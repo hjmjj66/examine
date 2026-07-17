@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <rclcpp_components/register_node_macro.hpp>
@@ -97,6 +99,17 @@ GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
   declare_parameter<double>("auto_exposure_time_min", 1000.0);
   declare_parameter<int>("auto_exposure", 0);
 
+  // ---- 设备时间戳 ----
+  declare_parameter<bool>("use_device_timestamp", false);
+  declare_parameter<double>("timestamp_offset_sec", 0.0);
+  declare_parameter<double>("timestamp_tick_frequency_hz_override", 0.0);
+  declare_parameter<std::string>(
+    "timestamp_status_topic", "/gx_camera/timestamp_status");
+  declare_parameter<double>("timestamp_latch_period_sec", 1.0);
+  declare_parameter<double>("timestamp_latch_alpha", 0.1);
+  declare_parameter<double>("timestamp_latch_max_correction_sec", 0.02);
+  declare_parameter<double>("timestamp_frequency_estimation_interval_sec", 0.05);
+
   // ---- 白平衡 ----
   declare_parameter<std::string>("auto_balance_mode", "once");
   declare_parameter<double>("red_balance_ratio", 1.0);
@@ -117,6 +130,7 @@ GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
   // ---- 读取 ROS 参数到成员变量 ----
   frame_id_ = get_parameter("frame_id").as_string();
   const auto image_topic = get_parameter("image_topic").as_string();
+  image_topic_name_ = image_topic;
   camera_info_topic_ = get_parameter("camera_info_topic").as_string();
   const auto publish_rate = get_parameter("publish_rate").as_double();
   width_ = get_parameter("width").as_int();
@@ -127,6 +141,23 @@ GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
   auto_exposure_time_max_ = get_parameter("auto_exposure_time_max").as_double();
   auto_exposure_time_min_ = get_parameter("auto_exposure_time_min").as_double();
   auto_exposure_ = (get_parameter("auto_exposure").as_int() != 0);
+  use_device_timestamp_ = get_parameter("use_device_timestamp").as_bool();
+  timestamp_offset_sec_ = get_parameter("timestamp_offset_sec").as_double();
+  timestamp_tick_frequency_override_hz_ = get_parameter(
+    "timestamp_tick_frequency_hz_override").as_double();
+  timestamp_status_topic_ = get_parameter("timestamp_status_topic").as_string();
+  timestamp_latch_period_sec_ =
+    std::max(0.1, get_parameter("timestamp_latch_period_sec").as_double());
+  timestamp_latch_alpha_ = get_parameter("timestamp_latch_alpha").as_double();
+  timestamp_latch_max_correction_sec_ =
+    get_parameter("timestamp_latch_max_correction_sec").as_double();
+  timestamp_frequency_estimation_interval_sec_ = std::max(
+    0.005, get_parameter("timestamp_frequency_estimation_interval_sec").as_double());
+  timestamp_mapper_ = GxTimestampMapper({
+      0.0,
+      timestamp_offset_sec_,
+      timestamp_latch_alpha_,
+      timestamp_latch_max_correction_sec_});
   gain_ = get_parameter("gain").as_double();
   auto_gain_max_ = get_parameter("auto_gain_max").as_double();
   auto_gain_min_ = get_parameter("auto_gain_min").as_double();
@@ -161,6 +192,8 @@ GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
   image_pub_ = create_publisher<sensor_msgs::msg::Image>(image_topic, rclcpp::SensorDataQoS());
   camera_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
     camera_info_topic_, rclcpp::QoS(1).transient_local());
+  timestamp_status_pub_ = create_publisher<aim_msgs::msg::GxTimestampStatus>(
+    timestamp_status_topic_, rclcpp::SensorDataQoS());
 
   // ---- 打开相机 ----
   if (!openCamera()) {
@@ -173,6 +206,19 @@ GxCameraComponent::GxCameraComponent(const rclcpp::NodeOptions & options)
   timer_ = create_wall_timer(
     std::chrono::duration_cast<std::chrono::nanoseconds>(period),
     [this]() { publishFrame(); });
+
+  if (use_device_timestamp_) {
+    // The latch command performs a remote-device feature transaction.  Keep it
+    // in a separate re-entrant callback group so a slow latch cannot delay the
+    // 100 Hz frame callback in the multi-threaded component container.
+    timestamp_latch_callback_group_ = create_callback_group(
+      rclcpp::CallbackGroupType::Reentrant);
+    timestamp_latch_timer_ = create_wall_timer(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(timestamp_latch_period_sec_)),
+      [this]() { maybeRefreshTimestampLatch(); },
+      timestamp_latch_callback_group_);
+  }
 
   RCLCPP_INFO(
     get_logger(),
@@ -302,7 +348,272 @@ bool GxCameraComponent::configureGxDevice()
   status = GXStreamOn(device_);
   if (!gx_ok(status)) { return false; }
   stream_on_ = true;
+  if (use_device_timestamp_ && !initializeTimestampMapper()) {
+    RCLCPP_WARN(
+      get_logger(),
+      "GX device timestamp requested but timestamp mapping is unavailable; "
+      "falling back to host receive time");
+  }
   return true;
+}
+
+bool GxCameraComponent::initializeTimestampMapper()
+{
+  {
+    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+    timestamp_mapper_.reset();
+    timestamp_tick_frequency_hz_ = 0.0;
+    timestamp_frequency_estimated_ = false;
+    timestamp_frequency_override_used_ = false;
+    timestamp_mapping_error_code_ = 0;
+    timestamp_mapping_error_stage_.clear();
+  }
+
+  // The feature-query calls are deliberately diagnostic rather than a hard
+  // gate.  A few GX firmware versions expose the timestamp features but
+  // return an incomplete feature table; the direct reads below are still the
+  // authoritative test.
+  bool frequency_implemented = false;
+  auto status = GXIsImplemented(
+    device_, GX_INT_TIMESTAMP_TICK_FREQUENCY, &frequency_implemented);
+  if (!gx_ok(status)) {
+    recordTimestampMappingFailure("query_tick_frequency_implemented", status);
+  } else if (!frequency_implemented) {
+    recordTimestampMappingFailure(
+      "tick_frequency_not_implemented", GX_STATUS_NOT_IMPLEMENTED);
+  }
+
+  bool frequency_readable = false;
+  status = GXIsReadable(device_, GX_INT_TIMESTAMP_TICK_FREQUENCY, &frequency_readable);
+  if (!gx_ok(status)) {
+    recordTimestampMappingFailure("query_tick_frequency_readable", status);
+  } else if (!frequency_readable) {
+    recordTimestampMappingFailure("tick_frequency_not_readable", GX_STATUS_INVALID_ACCESS);
+  }
+
+  bool latch_implemented = false;
+  status = GXIsImplemented(device_, GX_COMMAND_TIMESTAMP_LATCH, &latch_implemented);
+  if (!gx_ok(status)) {
+    recordTimestampMappingFailure("query_timestamp_latch_implemented", status);
+  } else if (!latch_implemented) {
+    recordTimestampMappingFailure(
+      "timestamp_latch_not_implemented", GX_STATUS_NOT_IMPLEMENTED);
+  }
+
+  bool latch_value_implemented = false;
+  status = GXIsImplemented(device_, GX_INT_TIMESTAMP_LATCH_VALUE, &latch_value_implemented);
+  if (!gx_ok(status)) {
+    recordTimestampMappingFailure("query_timestamp_latch_value_implemented", status);
+  } else if (!latch_value_implemented) {
+    recordTimestampMappingFailure(
+      "timestamp_latch_value_not_implemented", GX_STATUS_NOT_IMPLEMENTED);
+  }
+
+  bool latch_value_readable = false;
+  status = GXIsReadable(device_, GX_INT_TIMESTAMP_LATCH_VALUE, &latch_value_readable);
+  if (!gx_ok(status)) {
+    recordTimestampMappingFailure("query_timestamp_latch_value_readable", status);
+  } else if (!latch_value_readable) {
+    recordTimestampMappingFailure(
+      "timestamp_latch_value_not_readable", GX_STATUS_INVALID_ACCESS);
+  }
+
+  double tick_frequency_hz = 0.0;
+  int64_t tick_frequency = 0;
+  status = GXGetInt(device_, GX_INT_TIMESTAMP_TICK_FREQUENCY, &tick_frequency);
+  if (gx_ok(status) && tick_frequency > 0) {
+    tick_frequency_hz = static_cast<double>(tick_frequency);
+  } else {
+    recordTimestampMappingFailure("read_tick_frequency", status);
+    if (gx_ok(status) && tick_frequency <= 0) {
+      recordTimestampMappingFailure("read_tick_frequency_invalid", GX_STATUS_OUT_OF_RANGE);
+    }
+  }
+
+  if (tick_frequency_hz <= 0.0 && timestamp_tick_frequency_override_hz_ > 0.0) {
+    tick_frequency_hz = timestamp_tick_frequency_override_hz_;
+    timestamp_frequency_override_used_ = true;
+    RCLCPP_WARN(
+      get_logger(),
+      "GX timestamp tick frequency read failed; using configured override %.3fHz",
+      tick_frequency_hz);
+  }
+
+  if (tick_frequency_hz <= 0.0) {
+    // Some GX devices expose the image timestamp and latch command but not
+    // GX_INT_TIMESTAMP_TICK_FREQUENCY.  Estimate the counter rate from two
+    // host-midpoint/device-latch pairs instead of assuming nanoseconds.
+    std::uint64_t first_tick = 0U;
+    std::uint64_t second_tick = 0U;
+    rclcpp::Time first_host(0, 0, RCL_ROS_TIME);
+    rclcpp::Time second_host(0, 0, RCL_ROS_TIME);
+    if (!readTimestampLatch(first_tick, first_host)) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::duration<double>(
+      timestamp_frequency_estimation_interval_sec_));
+    if (!readTimestampLatch(second_tick, second_host)) {
+      return false;
+    }
+
+    const double host_delta_sec = (second_host - first_host).seconds();
+    const std::uint64_t tick_delta = second_tick > first_tick ?
+      second_tick - first_tick : 0U;
+    const double estimated_frequency = host_delta_sec > 0.0 ?
+      static_cast<double>(tick_delta) / host_delta_sec : 0.0;
+    if (second_tick <= first_tick || !std::isfinite(estimated_frequency) ||
+      estimated_frequency <= 0.0 || estimated_frequency > 1.0e12)
+    {
+      recordTimestampMappingFailure(
+        "estimate_tick_frequency_from_latch", GX_STATUS_ERROR);
+      RCLCPP_WARN(
+        get_logger(),
+        "GX timestamp latch frequency estimate invalid: tick_delta=%llu host_delta=%.9fs",
+        static_cast<unsigned long long>(tick_delta), host_delta_sec);
+      return false;
+    }
+    tick_frequency_hz = estimated_frequency;
+    timestamp_frequency_estimated_ = true;
+    RCLCPP_WARN(
+      get_logger(),
+      "GX timestamp tick frequency unavailable; estimated %.3fHz from latch pairs",
+      tick_frequency_hz);
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+    timestamp_tick_frequency_hz_ = tick_frequency_hz;
+    timestamp_mapper_.setTickFrequency(tick_frequency_hz);
+  }
+
+  if (!refreshTimestampLatch()) {
+    return false;
+  }
+
+  clearTimestampMappingFailure();
+  RCLCPP_INFO(
+    get_logger(),
+    "GX device timestamp enabled: tick_frequency=%.3fHz%s%s fixed_offset=%.6fs",
+    tick_frequency_hz,
+    timestamp_frequency_estimated_ ? " (estimated)" : "",
+    timestamp_frequency_override_used_ ? " (override)" : "",
+    timestamp_offset_sec_);
+  return true;
+}
+
+bool GxCameraComponent::readTimestampLatch(
+  std::uint64_t & device_tick, rclcpp::Time & host_time)
+{
+  if (device_ == nullptr) {
+    recordTimestampMappingFailure("read_timestamp_latch_invalid_device", GX_STATUS_INVALID_HANDLE);
+    return false;
+  }
+
+  const auto before = now();
+  const auto status = GXSendCommand(device_, GX_COMMAND_TIMESTAMP_LATCH);
+  if (!gx_ok(status)) {
+    recordTimestampMappingFailure("send_timestamp_latch", status);
+    return false;
+  }
+
+  int64_t latched_tick = 0;
+  const auto read_status = GXGetInt(
+    device_, GX_INT_TIMESTAMP_LATCH_VALUE, &latched_tick);
+  if (!gx_ok(read_status) || latched_tick < 0) {
+    recordTimestampMappingFailure(
+      "read_timestamp_latch_value", gx_ok(read_status) ? GX_STATUS_OUT_OF_RANGE : read_status);
+    return false;
+  }
+
+  const auto after = now();
+  const auto elapsed = after - before;
+  host_time = before + rclcpp::Duration::from_nanoseconds(elapsed.nanoseconds() / 2);
+  device_tick = static_cast<std::uint64_t>(latched_tick);
+  return true;
+}
+
+bool GxCameraComponent::refreshTimestampLatch()
+{
+  double tick_frequency_hz = 0.0;
+  {
+    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+    tick_frequency_hz = timestamp_tick_frequency_hz_;
+  }
+  if (device_ == nullptr || tick_frequency_hz <= 0.0) {
+    return false;
+  }
+
+  std::uint64_t latched_tick = 0U;
+  rclcpp::Time midpoint(0, 0, RCL_ROS_TIME);
+  if (!readTimestampLatch(latched_tick, midpoint)) {
+    return false;
+  }
+
+  bool updated = false;
+  double correction_sec = 0.0;
+  {
+    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+    updated = timestamp_mapper_.valid() ?
+      timestamp_mapper_.updateLatch(latched_tick, midpoint) :
+      timestamp_mapper_.initialize(latched_tick, midpoint);
+    correction_sec = timestamp_mapper_.estimatedLatchCorrectionSec();
+    if (updated) {
+      last_timestamp_latch_tick_ = latched_tick;
+      last_timestamp_latch_time_ = midpoint;
+    }
+  }
+  if (updated) {
+    RCLCPP_DEBUG_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "GX timestamp latch: tick=%lld correction=%.6fms",
+      static_cast<long long>(latched_tick), correction_sec * 1000.0);
+  } else {
+    recordTimestampMappingFailure("update_timestamp_mapping", GX_STATUS_ERROR);
+  }
+  return updated;
+}
+
+void GxCameraComponent::maybeRefreshTimestampLatch()
+{
+  if (!use_device_timestamp_) {
+    return;
+  }
+
+  const auto current_time = now();
+  {
+    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+    if (!timestamp_mapper_.valid() ||
+      (current_time - last_timestamp_latch_time_).seconds() < timestamp_latch_period_sec_)
+    {
+      return;
+    }
+  }
+
+  if (!refreshTimestampLatch()) {
+    return;
+  }
+  clearTimestampMappingFailure();
+}
+
+void GxCameraComponent::recordTimestampMappingFailure(
+  const char * stage, GX_STATUS status)
+{
+  {
+    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+    timestamp_mapping_error_code_ = static_cast<int32_t>(status);
+    timestamp_mapping_error_stage_ = stage == nullptr ? "unknown" : stage;
+  }
+  RCLCPP_WARN_THROTTLE(
+    get_logger(), *get_clock(), 5000,
+    "GX timestamp mapping failure at %s: status=%d",
+    stage == nullptr ? "unknown" : stage, static_cast<int>(status));
+}
+
+void GxCameraComponent::clearTimestampMappingFailure()
+{
+  std::lock_guard<std::mutex> lock(timestamp_mutex_);
+  timestamp_mapping_error_code_ = 0;
+  timestamp_mapping_error_stage_.clear();
 }
 
 // ===========================================================================
@@ -416,6 +727,11 @@ void GxCameraComponent::publishFrame()
     return;
   }
 
+  // Capture host receive time immediately after dequeue.  If the device
+  // mapping is unavailable this is the correct fallback boundary; image
+  // conversion and DDS publication happen after this point.
+  const auto receive_stamp = now();
+
   // ----- 预分配 Image 消息（unique_ptr，进程内零拷贝） -----
   auto msg = std::make_unique<sensor_msgs::msg::Image>();
   msg->header.frame_id = frame_id_;
@@ -436,6 +752,8 @@ void GxCameraComponent::publishFrame()
     bayer_filter_,
     false);
 
+  const auto device_timestamp = frame_buffer->nTimestamp;
+
   // DxRaw8toRGB24 输出 RGB，但 downstream 按 BGR 解码，交换 R/B 通道
   // for (size_t i = 0; i < msg->data.size(); i += 3) {
   //   std::swap(msg->data[i], msg->data[i + 2]);
@@ -444,8 +762,53 @@ void GxCameraComponent::publishFrame()
   // 归还缓冲区
   GXQBuf(device_, frame_buffer);
 
-  const auto stamp = now();
+  rclcpp::Time stamp = receive_stamp;
+  bool mapping_valid = false;
+  std::uint64_t latch_tick = 0U;
+  double tick_frequency_hz = 0.0;
+  double latch_correction_sec = 0.0;
+  double fixed_offset_sec = timestamp_offset_sec_;
+  bool frequency_estimated = false;
+  bool frequency_override = false;
+  int32_t mapping_error_code = 0;
+  std::string mapping_error_stage;
+  {
+    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+    if (use_device_timestamp_) {
+      stamp = timestamp_mapper_.map(device_timestamp, receive_stamp);
+    }
+    mapping_valid = timestamp_mapper_.valid();
+    latch_tick = last_timestamp_latch_tick_;
+    tick_frequency_hz = timestamp_mapper_.tickFrequencyHz();
+    latch_correction_sec = timestamp_mapper_.estimatedLatchCorrectionSec();
+    fixed_offset_sec = timestamp_mapper_.fixedOffsetSec();
+    frequency_estimated = timestamp_frequency_estimated_;
+    frequency_override = timestamp_frequency_override_used_;
+    mapping_error_code = timestamp_mapping_error_code_;
+    mapping_error_stage = timestamp_mapping_error_stage_;
+  }
   msg->header.stamp = stamp;
+
+  if (timestamp_status_pub_) {
+    aim_msgs::msg::GxTimestampStatus status;
+    status.header.stamp = stamp;
+    status.header.frame_id = frame_id_;
+    status.camera_name = image_topic_name_;
+    status.enabled = use_device_timestamp_ && mapping_valid;
+    status.mapping_valid = mapping_valid;
+    status.device_tick = device_timestamp;
+    status.latch_tick = latch_tick;
+    status.tick_frequency_hz = tick_frequency_hz;
+    status.tick_frequency_estimated = frequency_estimated;
+    status.tick_frequency_override = frequency_override;
+    status.mapped_stamp_sec = stamp.seconds();
+    status.host_receive_stamp_sec = receive_stamp.seconds();
+    status.latch_correction_sec = latch_correction_sec;
+    status.fixed_offset_sec = fixed_offset_sec;
+    status.mapping_error_code = mapping_error_code;
+    status.mapping_error_stage = mapping_error_stage;
+    timestamp_status_pub_->publish(std::move(status));
+  }
 
   // ----- 构建 CameraInfo -----
   sensor_msgs::msg::CameraInfo cam_info;

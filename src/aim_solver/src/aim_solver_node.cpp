@@ -7,10 +7,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <geometry_msgs/msg/point.hpp>
@@ -19,6 +21,7 @@
 #include <opencv2/core.hpp>
 #include <std_msgs/msg/color_rgba.hpp>
 #include <tf2/exceptions.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <tf2/time.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/qos.hpp>
@@ -121,6 +124,28 @@ AimSolverNode::AimSolverNode(const rclcpp::NodeOptions & options)
   declare_parameter<std::string>("target_frame", "gimbal_world");
   declare_parameter<double>("tf_lookup_timeout_sec", 0.05);
   declare_parameter<double>("tf_timestamp_offset_sec", 0.0);
+  declare_parameter<bool>("enable_time_alignment_estimator", false);
+  declare_parameter<std::string>("time_alignment_status_topic",
+    "/aim_solver/time_alignment_status");
+  declare_parameter<std::string>("selected_target_id_topic",
+    "/decider/selected_target_id");
+  declare_parameter<std::string>("time_alignment_camera", "front");
+  declare_parameter<int>("time_alignment_target_id", 6);
+  declare_parameter<double>("time_alignment_initial_offset_sec", 0.0);
+  declare_parameter<double>("time_alignment_min_offset_sec", -0.6);
+  declare_parameter<double>("time_alignment_max_offset_sec", 0.2);
+  declare_parameter<double>("time_alignment_search_step_sec", 0.002);
+  declare_parameter<int>("time_alignment_window_size", 24);
+  declare_parameter<int>("time_alignment_min_samples", 8);
+  declare_parameter<double>("time_alignment_min_motion_rad", 0.03);
+  declare_parameter<double>("time_alignment_min_score_improvement_rad2", 1e-5);
+  declare_parameter<double>("time_alignment_update_period_sec", 0.10);
+  declare_parameter<double>("time_alignment_process_noise_offset", 1e-5);
+  declare_parameter<double>("time_alignment_process_noise_drift", 1e-5);
+  declare_parameter<double>("time_alignment_measurement_noise", 2.5e-5);
+  declare_parameter<double>("time_alignment_max_offset_step_sec", 0.03);
+  declare_parameter<double>("time_alignment_min_offset_drift_sec_per_sec", -0.05);
+  declare_parameter<double>("time_alignment_max_offset_drift_sec_per_sec", 0.05);
   declare_parameter<bool>("use_current_time_for_tf", false);
   declare_parameter<bool>("enable_visualization", false);
   declare_parameter<bool>("use_generic_mode", false);
@@ -134,6 +159,41 @@ AimSolverNode::AimSolverNode(const rclcpp::NodeOptions & options)
   target_frame_ = get_parameter("target_frame").as_string();
   tf_lookup_timeout_sec_ = get_parameter("tf_lookup_timeout_sec").as_double();
   tf_timestamp_offset_sec_ = get_parameter("tf_timestamp_offset_sec").as_double();
+  enable_time_alignment_estimator_ =
+    get_parameter("enable_time_alignment_estimator").as_bool();
+  time_alignment_camera_ = get_parameter("time_alignment_camera").as_string();
+  time_alignment_target_id_ = get_parameter("time_alignment_target_id").as_int();
+  active_time_alignment_target_id_.store(time_alignment_target_id_);
+  time_alignment_config_.initial_offset_sec =
+    get_parameter("time_alignment_initial_offset_sec").as_double();
+  time_alignment_config_.min_offset_sec =
+    get_parameter("time_alignment_min_offset_sec").as_double();
+  time_alignment_config_.max_offset_sec =
+    get_parameter("time_alignment_max_offset_sec").as_double();
+  time_alignment_config_.search_step_sec =
+    get_parameter("time_alignment_search_step_sec").as_double();
+  time_alignment_config_.window_size = static_cast<std::size_t>(std::max<std::int64_t>(
+      2, get_parameter("time_alignment_window_size").as_int()));
+  time_alignment_config_.min_samples = static_cast<std::size_t>(std::max<std::int64_t>(
+      2, get_parameter("time_alignment_min_samples").as_int()));
+  time_alignment_config_.min_motion_rad =
+    get_parameter("time_alignment_min_motion_rad").as_double();
+  time_alignment_config_.min_score_improvement_rad2 =
+    get_parameter("time_alignment_min_score_improvement_rad2").as_double();
+  time_alignment_config_.update_period_sec =
+    get_parameter("time_alignment_update_period_sec").as_double();
+  time_alignment_config_.process_noise_offset =
+    get_parameter("time_alignment_process_noise_offset").as_double();
+  time_alignment_config_.process_noise_drift =
+    get_parameter("time_alignment_process_noise_drift").as_double();
+  time_alignment_config_.measurement_noise =
+    get_parameter("time_alignment_measurement_noise").as_double();
+  time_alignment_config_.max_offset_step_sec =
+    get_parameter("time_alignment_max_offset_step_sec").as_double();
+  time_alignment_config_.min_offset_drift_sec_per_sec =
+    get_parameter("time_alignment_min_offset_drift_sec_per_sec").as_double();
+  time_alignment_config_.max_offset_drift_sec_per_sec =
+    get_parameter("time_alignment_max_offset_drift_sec_per_sec").as_double();
   use_current_time_for_tf_ = get_parameter("use_current_time_for_tf").as_bool();
   use_generic_mode_ = get_parameter("use_generic_mode").as_bool();
   project_error_ratio_thres_ = get_parameter("project_error_ratio_thres").as_double();
@@ -151,6 +211,15 @@ AimSolverNode::AimSolverNode(const rclcpp::NodeOptions & options)
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(
     *tf_buffer_, this, true, makeRealtimeTfQos(), tf2_ros::StaticListenerQoS());
 
+  time_alignment_status_pub_ = create_publisher<aim_msgs::msg::TimeAlignmentStatus>(
+    get_parameter("time_alignment_status_topic").as_string(), rclcpp::QoS(10));
+  selected_target_id_sub_ = create_subscription<aim_msgs::msg::SelectedTargetId>(
+    get_parameter("selected_target_id_topic").as_string(),
+    rclcpp::SensorDataQoS().keep_last(1),
+    [this](const aim_msgs::msg::SelectedTargetId::ConstSharedPtr msg) {
+      onSelectedTargetId(msg);
+    });
+
   front_pipeline_.camera_name = "front";
   back_pipeline_.camera_name = "back";
   front_1_pipeline_.camera_name = "front_1";
@@ -163,6 +232,13 @@ AimSolverNode::AimSolverNode(const rclcpp::NodeOptions & options)
   initSolverPipeline(back_pipeline_, "back", back_use_info, enable_vis);
   initSolverPipeline(front_1_pipeline_, "front_1", front_1_use_info, enable_vis);
 
+}
+
+AimSolverNode::~AimSolverNode()
+{
+  stopTimeAlignmentWorker(front_pipeline_);
+  stopTimeAlignmentWorker(back_pipeline_);
+  stopTimeAlignmentWorker(front_1_pipeline_);
 }
 
 void AimSolverNode::initSolverPipeline(
@@ -180,6 +256,16 @@ void AimSolverNode::initSolverPipeline(
   pipeline.armor_pose_set_topic = get_parameter(armor_pose_param).as_string();
   pipeline.camera_info_topic = get_parameter(camera_info_param).as_string();
   pipeline.visualization_topic = get_parameter(vis_param).as_string();
+
+  if (enable_time_alignment_estimator_ && pipeline.camera_name == time_alignment_camera_) {
+    pipeline.time_alignment_estimator = std::make_unique<TimeAlignmentEstimator>(
+      time_alignment_config_);
+    pipeline.effective_time_alignment_offset_sec.store(tf_timestamp_offset_sec_);
+    RCLCPP_INFO(
+      get_logger(),
+      "[%s] adaptive image/TF time alignment enabled for target id=%d",
+      pipeline.camera_name.c_str(), time_alignment_target_id_);
+  }
 
   pipeline.has_camera_intrinsics = loadIntrinsicsForPipeline(pipeline, prefix);
 
@@ -199,6 +285,8 @@ void AimSolverNode::initSolverPipeline(
       onArmorSets(pipeline, msg);
     });
 
+  startTimeAlignmentWorker(pipeline);
+
   if (use_camera_info_topic) {
     pipeline.camera_info_sub = create_subscription<sensor_msgs::msg::CameraInfo>(
       pipeline.camera_info_topic,
@@ -214,6 +302,99 @@ void AimSolverNode::initSolverPipeline(
     pipeline.camera_name.c_str(),
     pipeline.armor_set_topic.c_str(),
     pipeline.armor_pose_set_topic.c_str());
+}
+
+void AimSolverNode::startTimeAlignmentWorker(SolverPipeline & pipeline)
+{
+  if (!pipeline.time_alignment_estimator || pipeline.time_alignment_worker.joinable()) {
+    return;
+  }
+  pipeline.time_alignment_worker_stop = false;
+  pipeline.time_alignment_worker = std::thread(
+    [this, &pipeline]() { timeAlignmentWorkerLoop(pipeline); });
+}
+
+void AimSolverNode::stopTimeAlignmentWorker(SolverPipeline & pipeline)
+{
+  if (!pipeline.time_alignment_worker.joinable()) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(pipeline.time_alignment_queue_mutex);
+    pipeline.time_alignment_worker_stop = true;
+  }
+  pipeline.time_alignment_queue_cv.notify_one();
+  pipeline.time_alignment_worker.join();
+}
+
+void AimSolverNode::timeAlignmentWorkerLoop(SolverPipeline & pipeline)
+{
+  const auto period = std::chrono::duration<double>(
+    std::max(0.02, time_alignment_config_.update_period_sec));
+
+  while (rclcpp::ok()) {
+    std::vector<TimeAlignmentEstimator::Sample> pending_samples;
+    std::string source_frame_id;
+    {
+      std::unique_lock<std::mutex> lock(pipeline.time_alignment_queue_mutex);
+      pipeline.time_alignment_queue_cv.wait_for(
+        lock, period,
+        [&pipeline]() { return pipeline.time_alignment_worker_stop; });
+      if (pipeline.time_alignment_worker_stop) {
+        break;
+      }
+      if (pipeline.time_alignment_pending_samples.empty()) {
+        continue;
+      }
+      pending_samples.assign(
+        pipeline.time_alignment_pending_samples.begin(),
+        pipeline.time_alignment_pending_samples.end());
+      pipeline.time_alignment_pending_samples.clear();
+      source_frame_id = pipeline.time_alignment_source_frame_id;
+    }
+
+    std::lock_guard<std::mutex> lock(pipeline.time_alignment_mutex);
+    if (!pipeline.time_alignment_estimator || source_frame_id.empty()) {
+      continue;
+    }
+    for (const auto & sample : pending_samples) {
+      pipeline.time_alignment_estimator->addSample(sample);
+    }
+
+    const auto evaluator = [this, source_frame_id](
+      double offset_sec, const TimeAlignmentEstimator::Sample & sample)
+      -> std::optional<double> {
+        const auto requested_stamp = rclcpp::Time(
+          static_cast<std::int64_t>(std::llround(sample.stamp_sec * 1e9)),
+          RCL_ROS_TIME) + rclcpp::Duration::from_seconds(offset_sec);
+        builtin_interfaces::msg::Time stamp;
+        const auto stamp_ns = requested_stamp.nanoseconds();
+        stamp.sec = static_cast<std::int32_t>(stamp_ns / 1000000000LL);
+        stamp.nanosec = static_cast<std::uint32_t>(stamp_ns % 1000000000LL);
+        geometry_msgs::msg::TransformStamped transform;
+        if (!lookupFrameTransform(source_frame_id, stamp, transform, false)) {
+          return std::nullopt;
+        }
+        geometry_msgs::msg::PointStamped source_point;
+        source_point.header.frame_id = source_frame_id;
+        source_point.header.stamp = stamp;
+        source_point.point.x = sample.point[0];
+        source_point.point.y = sample.point[1];
+        source_point.point.z = sample.point[2];
+        geometry_msgs::msg::PointStamped target_point;
+        tf2::doTransform(source_point, target_point, transform);
+        return std::atan2(target_point.point.y, target_point.point.x);
+      };
+
+    const auto motion = estimateGimbalMotion(
+      source_frame_id,
+      pipeline.time_alignment_estimator->samples(),
+      pipeline.time_alignment_estimator->offsetSec());
+    const auto estimate = pipeline.time_alignment_estimator->update(
+      now().seconds(), motion, evaluator);
+    pipeline.effective_time_alignment_offset_sec.store(estimate.offset_sec);
+    publishTimeAlignmentStatus(pipeline, estimate);
+  }
 }
 
 bool AimSolverNode::loadIntrinsicsForPipeline(
@@ -302,11 +483,57 @@ void AimSolverNode::onArmorSets(
     }
   }
 
+  struct SolvedArmor
+  {
+    std::uint8_t id{0U};
+    aim_msgs::msg::Armor armor;
+    ArmorType type{ArmorType::Negative};
+    geometry_msgs::msg::Pose source_pose;
+  };
+
+  std::vector<SolvedArmor> solved_armors;
+  solved_armors.reserve(msg->armor_sets.size());
+  for (const auto & armor_set : msg->armor_sets) {
+    for (const auto & armor_msg : armor_set.armors) {
+      const auto armor_type = armorTypeFromClassId(armor_msg.armor_class.class_id);
+      if (armor_type == ArmorType::Negative) {
+        continue;
+      }
+      geometry_msgs::msg::Pose source_pose;
+      if (!solveArmorPose(pipeline, armor_msg, armor_type, source_pose)) {
+        continue;
+      }
+      solved_armors.push_back({armor_set.id, armor_msg, armor_type, source_pose});
+    }
+  }
+
+  double effective_offset_sec = tf_timestamp_offset_sec_;
+  if (pipeline.time_alignment_estimator && !use_current_time_for_tf_) {
+    for (const auto & solved : solved_armors) {
+      if (solved.id != static_cast<std::uint8_t>(
+          active_time_alignment_target_id_.load())) {
+        continue;
+      }
+      std::lock_guard<std::mutex> lock(pipeline.time_alignment_queue_mutex);
+      const std::size_t max_pending_samples = std::max<std::size_t>(
+        32U, time_alignment_config_.window_size * 2U);
+      if (pipeline.time_alignment_pending_samples.size() >= max_pending_samples) {
+        pipeline.time_alignment_pending_samples.pop_front();
+      }
+      pipeline.time_alignment_pending_samples.push_back({
+          rclcpp::Time(msg->header.stamp).seconds(),
+          {solved.source_pose.position.x, solved.source_pose.position.y,
+            solved.source_pose.position.z}});
+      pipeline.time_alignment_source_frame_id = msg->header.frame_id;
+      break;
+    }
+    effective_offset_sec = pipeline.effective_time_alignment_offset_sec.load();
+  }
+
   builtin_interfaces::msg::Time transform_stamp_msg = msg->header.stamp;
   if (!use_current_time_for_tf_) {
-    transform_stamp_msg =
-      rclcpp::Time(msg->header.stamp) +
-      rclcpp::Duration::from_seconds(tf_timestamp_offset_sec_);
+    transform_stamp_msg = rclcpp::Time(msg->header.stamp) +
+      rclcpp::Duration::from_seconds(effective_offset_sec);
   }
   geometry_msgs::msg::TransformStamped frame_transform;
   const bool should_transform =
@@ -317,7 +544,6 @@ void AimSolverNode::onArmorSets(
     {
       return;
     }
-    transform_stamp_msg = frame_transform.header.stamp;
   }
 
   aim_msgs::msg::ArmorPoseSetArray output;
@@ -339,15 +565,12 @@ void AimSolverNode::onArmorSets(
     pose_set.id = armor_set.id;
     pose_set.armor_poses.reserve(armor_set.armors.size());
 
-    for (const auto & armor_msg : armor_set.armors) {
-      geometry_msgs::msg::Pose pose_msg;
-      const auto armor_type = armorTypeFromClassId(armor_msg.armor_class.class_id);
-      if (armor_type == ArmorType::Negative) {
+    for (const auto & solved : solved_armors) {
+      if (solved.id != armor_set.id) {
         continue;
       }
-      if (!solveArmorPose(pipeline, armor_msg, armor_type, pose_msg)) {
-        continue;
-      }
+
+      geometry_msgs::msg::Pose pose_msg = solved.source_pose;
 
       if (should_transform) {
         geometry_msgs::msg::Pose transformed_pose;
@@ -359,13 +582,13 @@ void AimSolverNode::onArmorSets(
 
       if (enable_optimize_yaw_) {
         optimizeYaw(
-          pipeline, armor_msg, armor_type,
+          pipeline, solved.armor, solved.type,
           should_transform ? &frame_transform : nullptr,
           pose_msg);
       }
 
       pose_set.armor_poses.push_back(pose_msg);
-      solved_poses.emplace_back(armor_type, pose_msg);
+      solved_poses.emplace_back(solved.type, pose_msg);
     }
 
     if (!pose_set.armor_poses.empty()) {
@@ -393,12 +616,15 @@ void AimSolverNode::onArmorSets(
 bool AimSolverNode::lookupFrameTransform(
   const std::string & source_frame_id,
   const builtin_interfaces::msg::Time & stamp,
-  geometry_msgs::msg::TransformStamped & transform)
+  geometry_msgs::msg::TransformStamped & transform,
+  bool warn_on_failure)
 {
   if (source_frame_id.empty()) {
-    RCLCPP_WARN_THROTTLE(
-      get_logger(), *get_clock(), 2000,
-      "armor set header.frame_id is empty, cannot align frames");
+    if (warn_on_failure) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "armor set header.frame_id is empty, cannot align frames");
+    }
     return false;
   }
 
@@ -411,17 +637,115 @@ bool AimSolverNode::lookupFrameTransform(
       tf2::durationFromSec(tf_lookup_timeout_sec_));
     return true;
   } catch (const tf2::TransformException & ex) {
-    RCLCPP_WARN_THROTTLE(
-      get_logger(),
-      *get_clock(),
-      2000,
-      "failed to lookup transform from %s to %s near stamp %.9f: %s",
-      source_frame_id.c_str(),
-      target_frame_.c_str(),
-      rclcpp::Time(stamp).seconds(),
-      ex.what());
+    if (warn_on_failure) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(),
+        *get_clock(),
+        2000,
+        "failed to lookup transform from %s to %s near stamp %.9f: %s",
+        source_frame_id.c_str(),
+        target_frame_.c_str(),
+        rclcpp::Time(stamp).seconds(),
+        ex.what());
+    }
     return false;
   }
+}
+
+double AimSolverNode::estimateGimbalMotion(
+  const std::string & source_frame_id,
+  const std::vector<TimeAlignmentEstimator::Sample> & samples,
+  double offset_sec)
+{
+  if (samples.size() < 2U || source_frame_id.empty() || use_current_time_for_tf_) {
+    return 0.0;
+  }
+
+  const auto orientationAt = [this, &source_frame_id, offset_sec](double stamp_sec)
+    -> std::optional<tf2::Quaternion> {
+      const auto requested_stamp = rclcpp::Time(
+        static_cast<std::int64_t>(std::llround(stamp_sec * 1e9)),
+        RCL_ROS_TIME) + rclcpp::Duration::from_seconds(offset_sec);
+      geometry_msgs::msg::TransformStamped transform;
+      builtin_interfaces::msg::Time stamp;
+      const auto stamp_ns = requested_stamp.nanoseconds();
+      stamp.sec = static_cast<std::int32_t>(stamp_ns / 1000000000LL);
+      stamp.nanosec = static_cast<std::uint32_t>(stamp_ns % 1000000000LL);
+      if (!lookupFrameTransform(source_frame_id, stamp, transform, false)) {
+        return std::nullopt;
+      }
+      return tf2::Quaternion(
+        transform.transform.rotation.x,
+        transform.transform.rotation.y,
+        transform.transform.rotation.z,
+        transform.transform.rotation.w);
+    };
+
+  std::optional<tf2::Quaternion> previous;
+  double travelled_rad = 0.0;
+  for (const auto & sample : samples) {
+    const auto current = orientationAt(sample.stamp_sec);
+    if (!current.has_value()) {
+      continue;
+    }
+    if (previous.has_value()) {
+      const tf2::Quaternion delta = previous->inverse() * *current;
+      travelled_rad += std::abs(delta.getAngleShortestPath());
+    }
+    previous = current;
+  }
+  return travelled_rad;
+}
+
+void AimSolverNode::publishTimeAlignmentStatus(
+  const SolverPipeline & pipeline,
+  const TimeAlignmentEstimator::Estimate & estimate)
+{
+  if (!time_alignment_status_pub_) {
+    return;
+  }
+  aim_msgs::msg::TimeAlignmentStatus msg;
+  msg.header.stamp = now();
+  msg.header.frame_id = target_frame_;
+  msg.camera_name = pipeline.camera_name;
+  msg.target_id = static_cast<std::uint8_t>(active_time_alignment_target_id_.load());
+  msg.enabled = pipeline.time_alignment_estimator != nullptr;
+  msg.converged = estimate.converged;
+  msg.updated = estimate.updated;
+  msg.frozen = estimate.frozen;
+  msg.offset_sec = estimate.offset_sec;
+  msg.offset_drift_sec_per_sec = estimate.offset_drift_sec_per_sec;
+  msg.score_rad2 = estimate.score_rad2;
+  msg.score_at_zero_rad2 = estimate.score_at_zero_rad2;
+  msg.score_at_current_rad2 = estimate.score_at_current_rad2;
+  msg.motion_rad = estimate.motion_rad;
+  msg.valid_samples = static_cast<std::uint32_t>(estimate.valid_samples);
+  msg.reason = estimate.reason;
+  time_alignment_status_pub_->publish(std::move(msg));
+}
+
+void AimSolverNode::onSelectedTargetId(
+  const aim_msgs::msg::SelectedTargetId::ConstSharedPtr msg)
+{
+  if (!msg->valid) {
+    return;
+  }
+  const int new_target_id = static_cast<int>(msg->id);
+  const int old_target_id = active_time_alignment_target_id_.exchange(new_target_id);
+  if (new_target_id != old_target_id && front_pipeline_.time_alignment_estimator) {
+    {
+      std::lock_guard<std::mutex> lock(front_pipeline_.time_alignment_queue_mutex);
+      front_pipeline_.time_alignment_pending_samples.clear();
+    }
+    std::lock_guard<std::mutex> lock(front_pipeline_.time_alignment_mutex);
+    front_pipeline_.time_alignment_estimator->resetSamples();
+    front_pipeline_.effective_time_alignment_offset_sec.store(
+      front_pipeline_.time_alignment_estimator->offsetSec());
+  }
+  RCLCPP_DEBUG(
+    get_logger(),
+    "time alignment target id updated from selector: %u",
+    static_cast<unsigned>(msg->id));
 }
 
 bool AimSolverNode::transformPose(

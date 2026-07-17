@@ -5,7 +5,18 @@ gx_camera_node:
     frame_id: "gx_camera_1_optical_frame" # 图像光学坐标系
     image_topic: "/gx_camera_1/image_raw" # 原始图像话题
     camera_info_topic: "/gx_camera_1/camera_info" # 相机内参话题
-    publish_rate: 100.0 # 图像发布频率（Hz）
+    publish_rate: 200.0 # 图像发布频率（Hz）
+    # GX device exposure timestamp -> ROS time mapping.
+    use_device_timestamp: true
+    timestamp_offset_sec: 0.0
+    # Leave at 0.0: if the SDK does not expose the frequency, the driver
+    # estimates it from two timestamp latch samples.
+    timestamp_tick_frequency_hz_override: 0.0
+    timestamp_status_topic: "/gx_camera_1/timestamp_status"
+    timestamp_latch_period_sec: 0.25
+    timestamp_latch_alpha: 0.25
+    timestamp_latch_max_correction_sec: 0.02
+    timestamp_frequency_estimation_interval_sec: 0.05
     width: 1280 # 图像宽度（像素）
     height: 1024 # 图像高度（像素）
 

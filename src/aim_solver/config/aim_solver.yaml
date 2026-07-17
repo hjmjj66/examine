@@ -38,9 +38,30 @@
 
     # ---------- 共享参数 ----------
     target_frame: "gimbal_world" # 解算位姿转换并输出到的目标坐标系
-    tf_lookup_timeout_sec: 0.01 # 查询目标坐标系 TF 的最长等待时间（秒）
-    tf_timestamp_offset_sec: -0.244 # 基于图像时间查询 TF 时附加的时间偏移（秒）
+    tf_lookup_timeout_sec: 0.05 # 查询目标坐标系 TF 的最长等待时间（秒）
+    tf_timestamp_offset_sec: 0.0 # 自适应估计关闭时的固定后备偏移（秒）
     use_current_time_for_tf: false # true 时查询最新 TF，忽略图像时间戳与上述偏移
+    # 图像/TF 时间偏移独立于目标 EKF；仅对 front(GX0) 的固定目标 id=6 更新。
+    enable_time_alignment_estimator: false
+    time_alignment_status_topic: "/aim_solver/time_alignment_status"
+    selected_target_id_topic: "/decider/selected_target_id"
+    time_alignment_camera: "front"
+    time_alignment_target_id: 6
+    time_alignment_initial_offset_sec: 0.0
+    time_alignment_min_offset_sec: -0.6
+    time_alignment_max_offset_sec: 0.2
+    time_alignment_search_step_sec: 0.002
+    time_alignment_window_size: 24
+    time_alignment_min_samples: 8
+    time_alignment_min_motion_rad: 0.03
+    time_alignment_min_score_improvement_rad2: 0.00001
+    time_alignment_update_period_sec: 0.10
+    time_alignment_process_noise_offset: 0.00001
+    time_alignment_process_noise_drift: 0.00001
+    time_alignment_measurement_noise: 0.000025
+    time_alignment_max_offset_step_sec: 0.03
+    time_alignment_min_offset_drift_sec_per_sec: -0.05
+    time_alignment_max_offset_drift_sec_per_sec: 0.05
     enable_visualization: true # 是否发布装甲板位姿 Marker 可视化
     use_generic_mode: false # 是否使用 solvePnPGeneric 生成并筛选多个 PnP 解
     project_error_ratio_thres: 3.0 # 两个 PnP 解重投影误差比超过此值时丢弃结果

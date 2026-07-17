@@ -36,7 +36,7 @@ armor_controller_node:
     target_msg_timeout_sec: 0.30 # 目标消息超过该时长未更新则回退（秒）
     # 短暂丢失前哨 tracking 时保持最近有效目标，期间不允许开火。
     outpost_tracking_hold_sec: 0.10 # 前哨短暂丢跟踪时保持目标的时间（秒）
-    max_angle_rate_deg_per_sec: 60.0 # 控制角最大变化速度（yaw/pitch 共用，度/秒）
+    max_angle_rate_deg_per_sec: 99999.9 # 控制角最大变化速度（yaw/pitch 共用，度/秒）
     armor_select_area_weight: 1.0 # 选板面积权重（当前控制器未使用）
     armor_select_angle_weight: 0.0 # 选板瞄准角误差权重（当前控制器未使用）
     include_processing_delay: true # 预测时间是否计入消息处理延迟
@@ -48,7 +48,7 @@ armor_controller_node:
     shoot_yaw_tolerance_deg: 1.0 # 允许开火的偏航误差（度）
     shoot_pitch_tolerance_deg: 1.0 # 允许开火的俯仰误差（度）
     shoot_face_tolerance_deg: 2.0 # 允许开火的装甲板朝向误差（度）
-    spin_center_aim_angular_velocity_threshold: 2.0 # 高速旋转时改瞄中心的角速度阈值（rad/s）
+    spin_center_aim_angular_velocity_threshold: 10.0 # 高速旋转时改瞄中心的角速度阈值（rad/s）
 
     # —— 智能选板参数（移植自 ly_aim controller）——
     # enable_smart_selector: true 时使用装甲板旋转方向和角速度动态选板
@@ -60,7 +60,7 @@ armor_controller_node:
     leaving_angle_deg: 20.0 # 旋转装甲板离开候选区的角度门限（度）
     # 慢速旋转角速度阈值 (rad/s)：低于此值用"最正面选择"策略，高于此值用"正在转来"策略
     smart_selector_max_angular_velocity: 2.0 # 智能选板慢速角速度阈值（当前控制器未使用）
-    outpost_shoot_yaw_gate_deg: 45.0 # 前哨站允许开火的装甲板朝向窗口（度）
+    outpost_shoot_yaw_gate_deg: 60.0 # 前哨站允许开火的装甲板朝向窗口（度）
 
     # 与 ros2_ly_ws_sentry/src/predictor 内 Controller 一致：射击表、目标点偏置
     # shoot_table_adjust.enable: true 时在弹道解上叠加二阶补偿（与 predictor_config.yaml 同源系数）

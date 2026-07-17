@@ -1,7 +1,12 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -15,7 +20,10 @@
 
 #include "aim_msgs/msg/armor_pose_set_array.hpp"
 #include "aim_msgs/msg/armor_set_array.hpp"
+#include "aim_msgs/msg/selected_target_id.hpp"
+#include "aim_msgs/msg/time_alignment_status.hpp"
 #include "aim_msgs/msg/armor.hpp"
+#include "aim_solver/time_alignment_estimator.hpp"
 
 namespace aim_solver
 {
@@ -24,6 +32,7 @@ class AimSolverNode : public rclcpp::Node
 {
 public:
   explicit AimSolverNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  ~AimSolverNode() override;
 
 private:
   enum class ArmorType
@@ -76,6 +85,15 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub;
     rclcpp::Publisher<aim_msgs::msg::ArmorPoseSetArray>::SharedPtr armor_pose_pub;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr visualization_pub;
+    std::unique_ptr<TimeAlignmentEstimator> time_alignment_estimator;
+    std::mutex time_alignment_mutex;
+    std::mutex time_alignment_queue_mutex;
+    std::condition_variable time_alignment_queue_cv;
+    std::deque<TimeAlignmentEstimator::Sample> time_alignment_pending_samples;
+    std::string time_alignment_source_frame_id;
+    std::atomic<double> effective_time_alignment_offset_sec{0.0};
+    bool time_alignment_worker_stop{false};
+    std::thread time_alignment_worker;
 
     int last_marker_count{0};
   };
@@ -104,7 +122,20 @@ private:
   bool lookupFrameTransform(
     const std::string & source_frame_id,
     const builtin_interfaces::msg::Time & stamp,
-    geometry_msgs::msg::TransformStamped & transform);
+    geometry_msgs::msg::TransformStamped & transform,
+    bool warn_on_failure = true);
+  double estimateGimbalMotion(
+    const std::string & source_frame_id,
+    const std::vector<TimeAlignmentEstimator::Sample> & samples,
+    double offset_sec);
+  void publishTimeAlignmentStatus(
+    const SolverPipeline & pipeline,
+    const TimeAlignmentEstimator::Estimate & estimate);
+  void onSelectedTargetId(
+    const aim_msgs::msg::SelectedTargetId::ConstSharedPtr msg);
+  void startTimeAlignmentWorker(SolverPipeline & pipeline);
+  void stopTimeAlignmentWorker(SolverPipeline & pipeline);
+  void timeAlignmentWorkerLoop(SolverPipeline & pipeline);
   bool transformPose(
     const geometry_msgs::msg::Pose & source_pose,
     const geometry_msgs::msg::TransformStamped & transform,
@@ -176,6 +207,15 @@ private:
   double optimize_yaw_outpost_pitch_rad_{-15.0 * 3.14159265358979323846 / 180.0};
   double tf_lookup_timeout_sec_{0.05};
   double tf_timestamp_offset_sec_{0.0};
+  bool enable_time_alignment_estimator_{false};
+  int time_alignment_target_id_{6};
+  std::atomic<int> active_time_alignment_target_id_{6};
+  std::string time_alignment_camera_{"front"};
+  TimeAlignmentEstimator::Config time_alignment_config_;
+  rclcpp::Publisher<aim_msgs::msg::TimeAlignmentStatus>::SharedPtr
+    time_alignment_status_pub_;
+  rclcpp::Subscription<aim_msgs::msg::SelectedTargetId>::SharedPtr
+    selected_target_id_sub_;
 
   SolverPipeline front_pipeline_;
   SolverPipeline back_pipeline_;
