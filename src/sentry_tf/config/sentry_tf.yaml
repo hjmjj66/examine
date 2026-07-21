@@ -1,7 +1,7 @@
 # sentry_tf：由 /ly/gimbal/angles 广播 TF 链
 #   base_link --(yaw)--> gimbal_small_yaw --(yaw inverse)--> gimbal_world
 #   gimbal_small_yaw --static(+Z)--> gimbal_barrel_joint --(pitch)--> gimbal_barrel
-# 角约定：yaw 左负右正；pitch 上正下负
+# ????yaw ?????pitch ????
 sentry_tf_node:
   ros__parameters:
     gimbal_topic: "/ly/gimbal/angles" # 云台角度输入话题
@@ -13,7 +13,7 @@ sentry_tf_node:
     # 俯仰轴（barrel_joint）相对 yaw 轴交点沿 +Z 的抬升量（米），由静态 TF 发布
     barrel_offset_z: 0.320 # 偏航轴到俯仰轴的 Z 向偏移（米）
 
-# gimbal_barrel -> gx_camera_0 静态 TF（相机标定结果）
+# gimbal_barrel -> gx_camera_0 ?? TF????????
 barrel_to_camera_0:
   x: 0.21932353 # 相对父坐标系平移 X（米）
   y: 0.04072862 # 相对父坐标系平移 Y（米）
