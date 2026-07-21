@@ -1,29 +1,29 @@
 /**:
   ros__parameters:
     # ---------- 前相机 #0(大恒工业相机) ----------
-    camera_name: "front_0"
-    enable_front_camera: true
-    front_image_topic: "/gx_camera_0/image_raw"
-    front_armor_topic: "/aim_detector/front_0/armor_sets"
-    front_visualization_topic: "/aim_detector/front_0/visualization"
+    camera_name: "front_0" # 当前检测器使用的相机名称
+    enable_front_camera: true # 是否启用前相机检测
+    front_image_topic: "/gx_camera_0/image_raw" # 前相机输入图像话题
+    front_armor_topic: "/aim_detector/front_0/armor_sets" # 装甲板输出话题
+    front_visualization_topic: "/aim_detector/front_0/visualization" # 可视化话题
 
     # ---------- 后相机(USB摄像头) ----------
-    enable_back_camera: false
-    back_image_topic: "/usb_camera/image_raw"
-    back_armor_topic: "/aim_detector/back/armor_sets"
-    back_visualization_topic: "/aim_detector/back/visualization"
+    enable_back_camera: false # 是否启用后相机检测
+    back_image_topic: "/usb_camera/image_raw" # 后相机输入图像话题
+    back_armor_topic: "/aim_detector/back/armor_sets" # 后相机装甲板输出话题
+    back_visualization_topic: "/aim_detector/back/visualization" # 后相机可视化话题
 
     # ---------- 模型与推理参数 ----------
-    model_path: "/home/hustlyrm/sentry.aim/assets/0526_fp16.xml"
-    device_name: "GPU"
-    enemy_color: -2
-    enable_visualization: true
-    enable_pca_correction: true
-    pca.pass_optimize_lightbar_width: 5
-    pca.normalize_max_brightness: 25.0
-    pca.lightbar_min_mean_brightness: 35.0
-    pca.padding_scale: 0.10
-    pca.search_start_ratio: 0.35
-    pca.search_end_ratio: 0.65
-    pca.estimated_width_ratio: 0.16
-    pca.min_sample_width: 4
+    model_path: "/home/hustlyrm/sentry.aim/assets/0526_fp16.xml" # 模型文件路径
+    device_name: "GPU" # 推理设备
+    enemy_color: 0 # 敌方颜色：-2=双方，0=蓝方，1=红方
+    enable_visualization: false # 是否发布可视化图像
+    enable_pca_correction: true # 是否启用 PCA 灯条校正
+    pca.pass_optimize_lightbar_width: 5 # PCA 校正通过的灯条宽度阈值
+    pca.normalize_max_brightness: 25.0 # 亮度归一化最大值
+    pca.lightbar_min_mean_brightness: 35.0 # 灯条最小平均亮度
+    pca.padding_scale: 0.10 # 搜索区域外扩比例
+    pca.search_start_ratio: 0.35 # 搜索起始比例
+    pca.search_end_ratio: 0.65 # 搜索结束比例
+    pca.estimated_width_ratio: 0.16 # 估计灯条宽度比例
+    pca.min_sample_width: 4 # 最小采样宽度（像素）

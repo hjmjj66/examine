@@ -17,4 +17,5 @@ float64 high_height_offset
 bool has_primary_armor
 int8 primary_slot
 geometry_msgs/Pose primary_armor
+bool[3] visible_slots
 geometry_msgs/Pose[] predicted_armors

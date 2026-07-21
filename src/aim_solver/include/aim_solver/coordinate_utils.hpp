@@ -38,4 +38,14 @@ inline cv::Matx33d cameraRotationToOpticalFrame(const cv::Matx33d & camera_rotat
   return cameraToOpticalBasisRotation() * camera_rotation;
 }
 
+inline cv::Vec3d opticalPointToSolverInputFrame(const cv::Vec3d & optical_point)
+{
+  return optical_point;
+}
+
+inline cv::Matx33d opticalRotationToSolverInputFrame(const cv::Matx33d & optical_rotation)
+{
+  return optical_rotation;
+}
+
 }  // namespace aim_solver

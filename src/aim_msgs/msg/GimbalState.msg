@@ -3,3 +3,7 @@ float32 yaw
 float32 pitch
 float32 bullet_speed
 uint8 aim_request
+float32 yaw_omega
+float32 pitch_omega
+float32 yaw_alpha
+float32 pitch_alpha

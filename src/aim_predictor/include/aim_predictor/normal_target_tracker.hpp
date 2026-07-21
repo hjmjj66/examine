@@ -9,6 +9,7 @@
 #include <rclcpp/time.hpp>
 
 #include "aim_predictor/extended_kalman_filter.hpp"
+#include "aim_predictor/measurement_noise.hpp"
 
 namespace aim_predictor
 {
@@ -20,6 +21,7 @@ struct ArmorMeasurement
   Eigen::Vector3d xyz{Eigen::Vector3d::Zero()};
   Eigen::Vector3d ypr{Eigen::Vector3d::Zero()};
   Eigen::Vector3d ypd{Eigen::Vector3d::Zero()};
+  CameraSource source{CameraSource::Front0};
 };
 
 struct ProcessNoiseConfig
@@ -45,7 +47,9 @@ public:
   void setProcessNoiseConfig(const ProcessNoiseConfig & process_noise_config);
   void initialize(const ArmorMeasurement & armor, const rclcpp::Time & stamp, double radius);
   void predict(const rclcpp::Time & stamp);
-  void update(const ArmorMeasurement & armor);
+  void update(
+    const ArmorMeasurement & armor,
+    const MeasurementNoiseConfig & measurement_noise_config);
 
   [[nodiscard]] bool active() const;
   [[nodiscard]] bool converged() const;

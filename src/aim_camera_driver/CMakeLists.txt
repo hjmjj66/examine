@@ -6,6 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(aim_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -15,6 +16,7 @@ find_package(std_msgs REQUIRED)
 
 set(COMMON_DEPENDENCIES
   cv_bridge
+  aim_msgs
   rclcpp
   rclcpp_components
   sensor_msgs
@@ -91,10 +93,33 @@ if(GXIAPI_INCLUDE_DIR AND GXIAPI_LIB)
     "aim_camera_driver::GxCameraComponent"
   )
 
+  add_executable(gx_camera_rate_probe
+    tools/gx_camera_rate_probe.cpp
+  )
+
+  target_compile_features(gx_camera_rate_probe PUBLIC cxx_std_17)
+  target_include_directories(gx_camera_rate_probe PRIVATE
+    ${GXIAPI_INCLUDE_DIR}
+  )
+
+  ament_target_dependencies(gx_camera_rate_probe
+    rclcpp
+    sensor_msgs
+  )
+
+  target_link_libraries(gx_camera_rate_probe
+    ${GXIAPI_LIB}
+  )
+
   install(TARGETS
     aim_gx_camera_component
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
+  )
+
+  install(TARGETS
+    gx_camera_rate_probe
+    DESTINATION lib/${PROJECT_NAME}
   )
 else()
   message(WARNING
@@ -118,7 +143,15 @@ install(DIRECTORY config
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+  ament_add_gtest(test_gx_timestamp_mapper
+    test/test_gx_timestamp_mapper.cpp
+  )
+  if(TARGET test_gx_timestamp_mapper)
+    target_include_directories(test_gx_timestamp_mapper PRIVATE include)
+    ament_target_dependencies(test_gx_timestamp_mapper rclcpp)
+  endif()
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()

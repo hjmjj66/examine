@@ -28,6 +28,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetState.msg"
   "msg/DelayStatistics.msg"
   "msg/TargetStateArray.msg"
+  "msg/TimeAlignmentStatus.msg"
+  "msg/GxTimestampStatus.msg"
   DEPENDENCIES geometry_msgs std_msgs
 )
 

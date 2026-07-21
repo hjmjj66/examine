@@ -1,84 +1,121 @@
 armor_controller_node:
   ros__parameters:
-    front_0_target_states_topic: /aim_predictor/front_0/target_states
-    front_1_target_states_topic: /aim_predictor/front_1/target_states
-    back_target_states_topic: /aim_predictor/back/target_states
-    outpost_state_topic: /aim_outpost_predictor/outpost_state
-    selected_target_id_topic: /decider/selected_target_id
-    aim_result_topic: /ly/aim/result
-    gimbal_angles_topic: /ly/gimbal/angles
-    bullet_speed_topic: /ly/game/bullet
-    control_angles_topic: /ly/control/angles
-    control_firecode_topic: /ly/control/firecode
-    selected_armor_topic: /controller/selected_armor
-    debug_target_point_topic: /armor_controller/debug/target_point_barrel
-    debug_selected_armor_index_topic: /armor_controller/debug/selected_armor_index
-    publish_legacy_control_topics: true
+    front_0_target_states_topic: /aim_predictor/fused/target_states # 融合目标状态输入
+    front_1_target_states_topic: /aim_predictor/disabled/front_1 # 保留参数兼容，不参与控制
+    back_target_states_topic: /aim_predictor/disabled/back # 保留参数兼容，不参与控制
+    outpost_state_topic: /aim_outpost_predictor/outpost_state # 前哨站状态输入
+    selected_target_id_topic: /decider/selected_target_id # 决策模块选中的目标 ID
+    aim_result_topic: /ly/aim/result # 瞄准结果输出
+    gimbal_angles_topic: /ly/gimbal/angles # 云台当前角度输入
+    gimbal_state_topic: /ly/gimbal/state # 云台角度、角速度、角加速度反馈
+    bullet_speed_topic: /ly/game/bullet # 实时弹速输入
+    control_angles_topic: /ly/control/angles # 兼容控制角度输出
+    control_trajectory_topic: /ly/control/trajectory # MPC 六量轨迹输出
+    control_firecode_topic: /ly/control/firecode # 兼容开火码输出
+    selected_armor_topic: /controller/selected_armor # 当前选中装甲板输出
+    debug_target_point_topic: /armor_controller/debug/target_point_barrel # 枪管系目标点调试输出
+    debug_selected_armor_index_topic: /armor_controller/debug/selected_armor_index # 选板索引调试输出
+    publish_legacy_control_topics: true # 是否发布兼容控制话题
+    publish_control_trajectory: false # 是否直接发布 MPC 六量轨迹控制云台
+    publish_control_angles: false # 是否发布兼容角度控制话题
     # 手动开火模式：true 时不发布 /ly/control/firecode，交由外部手动控制开火
-    manual_fire_mode: True
-    publish_rate_hz: 100.0
+    manual_fire_mode: true # 是否禁止控制器发布开火码并交由外部手动开火
+    publish_rate_hz: 100.0 # 控制循环频率（Hz）
     # 最大弹频（Hz），即每秒最多翻转几次 firecode
-    fire_rate_hz: 2.0
-    bullet_speed_mps: 23.0
-    min_bullet_speed_mps: 20.0
-    bullet_speed_alpha: 0.5
-    tol_deltax_m: 0.05
-    tol_deltay_m: 0.05
-    bullet_mass_kg: 0.0032
-    bullet_diameter_m: 0.0168
-    max_iter: 100
-    tol: 1.0e-6
+    fire_rate_hz: 2.0 # 开火码翻转频率上限（Hz）
+    bullet_speed_mps: 23.0 # 无实时弹速时使用的默认弹速（m/s）
+    min_bullet_speed_mps: 20.0 # 允许使用的最小弹速（m/s）
+    fallback_bullet_speed_mps: 23.0 # 实时弹速低于阈值时 MPC 使用的回退弹速（m/s）
+    use_air_resistance: true # MPC 弹道是否使用空气阻力模型
+    bullet_speed_alpha: 0.5 # 实时弹速低通滤波系数
+    tol_deltax_m: 0.05 # 弹道积分 X 步长（当前控制器未使用）
+    tol_deltay_m: 0.05 # 弹道积分 Y 步长（当前控制器未使用）
+    bullet_mass_kg: 0.0032 # 弹丸质量（kg）
+    bullet_diameter_m: 0.0168 # 弹丸直径（m）
+    max_iter: 100 # 弹道解算最大迭代次数
+    tol: 1.0e-6 # 弹道解算收敛阈值
     # 控制解算目标坐标系：在该系下解 yaw/pitch（建议为俯仰关节 gimbal_barrel_joint）
-    barrel_joint_frame: gimbal_barrel_joint
+    barrel_joint_frame: gimbal_barrel_joint # 用于解算云台 yaw/pitch 的枪管关节坐标系
     # TF 查询超时时间，设为 0 表示不等待，查不到立即 fallback
-    target_tf_timeout_sec: 0.10
+    target_tf_timeout_sec: 0.10 # 目标 TF 查询超时时间（秒）
     # 目标消息超过该时长未更新则直接 fallback，避免使用陈旧时间戳反复查 TF
-    target_msg_timeout_sec: 0.10
-    armor_select_area_weight: 1.0
-    armor_select_angle_weight: 0.0
-    include_processing_delay: true
-    system_response_time_sec: 0.0
-    max_prediction_iterations: 10
-    fly_time_converge_threshold_sec: 0.001
-    max_processing_delay_sec: 0.2
-    max_predict_time_sec: 1.0
-    shoot_yaw_tolerance_deg: 1.0
-    shoot_pitch_tolerance_deg: 1.0
-    shoot_face_tolerance_deg: 2.0
-    spin_center_aim_angular_velocity_threshold: 2.0
+    target_msg_timeout_sec: 0.30 # 目标消息超过该时长未更新则回退（秒）
+    # 短暂丢失前哨 tracking 时保持最近有效目标，期间不允许开火。
+    outpost_tracking_hold_sec: 0.10 # 前哨短暂丢跟踪时保持目标的时间（秒）
+    max_angle_rate_deg_per_sec: 99999.9 # 控制角最大变化速度（yaw/pitch 共用，度/秒）
+    armor_select_area_weight: 1.0 # 选板面积权重（当前控制器未使用）
+    armor_select_angle_weight: 0.0 # 选板瞄准角误差权重（当前控制器未使用）
+    include_processing_delay: true # 预测时间是否计入消息处理延迟
+    system_response_time_sec: 0.0 # 云台与发射系统响应延迟（秒）
+    outpost_extra_prediction_time_sec: 0.0 # 前哨站额外预测时间（秒）
+    max_prediction_iterations: 10 # 预测与飞行时间耦合迭代上限
+    fly_time_converge_threshold_sec: 0.001 # 飞行时间迭代收敛阈值（秒）
+    max_processing_delay_sec: 0.3 # 计入预测的最大处理延迟（秒）
+    max_predict_time_sec: 1.0 # 允许的最大预测时间（秒）
+    shoot_yaw_tolerance_deg: 1.0 # 允许开火的偏航误差（度）
+    shoot_pitch_tolerance_deg: 1.0 # 允许开火的俯仰误差（度）
+    shoot_face_tolerance_deg: 2.0 # 允许开火的装甲板朝向误差（度）
+    spin_center_aim_angular_velocity_threshold: 10.0 # 高速旋转时改瞄中心的角速度阈值（rad/s）
 
     # —— 智能选板参数（移植自 ly_aim controller）——
-    # enable_smart_selector: true 时使用装甲板旋转方向和角速度动态选板
-    # false 时 fallback 到最近距离选择
-    enable_smart_selector: true
-    # 到来角 (°)：装甲板朝向与 center_yaw 之差小于此角度才视为正面候选
-    comming_angle_deg: 60.0
-    # 离开角 (°)：装甲板正在转来时的角度阈值，更宽松以留出余量
-    leaving_angle_deg: 20.0
-    # 慢速旋转角速度阈值 (rad/s)：低于此值用"最正面选择"策略，高于此值用"正在转来"策略
-    smart_selector_max_angular_velocity: 2.0
-    outpost_shoot_yaw_gate_deg: 45.0
+    # 普通装甲板和前哨站共用此选板策略；关闭后 fallback 到最近正面板
+    enable_smart_selector: true # 是否启用智能选板策略
+    # 到来角和离开角（度）
+    comming_angle_deg: 60.0 # 装甲板到来角阈值（度）
+    leaving_angle_deg: 20.0 # 装甲板离开角阈值（度）
+    # canonical 兼容阈值（rad/s）；low_speed 参数仅保留兼容，启动时统一到 canonical 值
+    smart_selector_max_angular_velocity: 2.0 # 智能选板角速度阈值（rad/s）
+    low_speed_angular_velocity_threshold: 2.0 # 兼容参数；启动时统一采用规范阈值（rad/s）
+    # 动态切板响应速度、最小方向切板角速度（rad/s）
+    selector_response_speed_rad_s: 0.01 # 动态切板响应速度（rad/s）
+    selector_min_angular_velocity_rad_s: 0.6 # 动态切板最小角速度阈值（rad/s）
+    # 前哨站收敛后允许使用当前帧未观测但预测有效的装甲板
+    allow_predicted_outpost_slots: true # 前哨站收敛后是否允许使用未观测但预测有效的装甲板
+    # 前哨站开火朝向门控；允许提前瞄准，但未通过门控仍禁止开火
+    outpost_shoot_yaw_gate_deg: 60.0 # 前哨站允许开火的最大朝向误差（度）
+
+
 
     # 与 ros2_ly_ws_sentry/src/predictor 内 Controller 一致：射击表、目标点偏置
     # shoot_table_adjust.enable: true 时在弹道解上叠加二阶补偿（与 predictor_config.yaml 同源系数）
-    controller_config:
-      shoot_table_adjust:
-        enable: false
+    enable_mpc: true # 是否启用 MPC 控制器
+    world_frame_id: gimbal_world # MPC 使用的世界坐标系
+    use_current_time_for_tf: false # 是否忽略目标时间戳并使用最新 TF
+    yaw_offset_deg: 0.0 # MPC 输出的偏航固定补偿（度）
+    pitch_offset_deg: -1.2 # MPC 输出的俯仰固定补偿（度）
+    gimbal_state_history_sec: 2.0 # 保存云台历史状态的时长（秒）
+    mpc_dt: 0.01 # MPC 离散时间步长（秒）
+    mpc_horizon: 100 # MPC 预测步数
+    fire_thresh: 0.0035 # 判断达到开火轨迹的误差阈值
+    fire_offset: 6 # 相对预测中心的开火索引偏移
+    max_yaw_acc: 50.0 # 偏航最大控制加速度（rad/s^2）
+    max_pitch_acc: 50.0 # 俯仰最大控制加速度（rad/s^2）
+    q_yaw_position: 9.0e6 # 偏航位置误差权重
+    q_yaw_velocity: 0.05 # 偏航速度误差权重
+    r_yaw_acceleration: 1.0 # 偏航控制量权重
+    q_pitch_position: 9.0e6 # 俯仰位置误差权重
+    q_pitch_velocity: 0.0 # 俯仰速度误差权重
+    r_pitch_acceleration: 1.0 # 俯仰控制量权重
+    mpc_max_iterations: 10 # MPC 求解最大迭代次数
+
+    controller_config: # 兼容旧控制器的射击表和目标点偏置配置
+      shoot_table_adjust: # 兼容旧控制器的射击表二阶补偿开关和系数
+        enable: false # 是否启用射击表二阶补偿
         pitch:
-          intercept: -1.547
-          coef_z: -4.876
-          coef_d: 1.1344
-          coef_z2: -16.5213
-          coef_zd: -1.14337
-          coef_d2: -0.1510
+          intercept: -1.547 # 常数项
+          coef_z: -4.876 # 高度 z 一次项
+          coef_d: 1.1344 # 水平距离 d 一次项
+          coef_z2: -16.5213 # 高度 z 二次项
+          coef_zd: -1.14337 # 高度与距离交叉项
+          coef_d2: -0.1510 # 水平距离 d 二次项
         yaw:
-          intercept: 1.0714
-          coef_z: -7.7968
-          coef_d: -1.25504
-          coef_z2: -15.632
-          coef_zd: 0.1603
-          coef_d2: 0.1827
+          intercept: 1.0714 # 常数项
+          coef_z: -7.7968 # 高度 z 一次项
+          coef_d: -1.25504 # 水平距离 d 一次项
+          coef_z2: -15.632 # 高度 z 二次项
+          coef_zd: 0.1603 # 高度与距离交叉项
+          coef_d2: 0.1827 # 水平距离 d 二次项
       target_offset:
-        x: 0.0
-        y: 0.0
-        z: 0.0
+        x: 0.0 # 枪管系目标点 X 偏置（m）
+        y: 0.0 # 枪管系目标点 Y 偏置（m）
+        z: 0.0 # 枪管系目标点 Z 偏置（m）

@@ -1,38 +1,39 @@
 aim_outpost_predictor_node:
   ros__parameters:
-    front_0_armor_pose_set_topic: "/aim_solver/front_0/armor_pose_sets"
-    front_1_armor_pose_set_topic: "/aim_solver/front_1/armor_pose_sets"
-    front_0_fallback_timeout_sec: 0.2
-    outpost_state_topic: "/aim_outpost_predictor/outpost_state"
-    enable_visualization: true
-    visualization_topic: "/aim_outpost_predictor/visualization"
-    world_frame_id: "gimbal_world"
-    gimbal_frame_id: "gimbal_small_yaw"
-    tf_lookup_timeout_sec: 0.01
-    armor_gimbal_yaw_gate_deg: 40.0
-    outpost_id: 6
-    max_lost_count: 75
-    min_consecutive_detections_to_track: 2
-    max_nis_failure_ratio: 0.4
-    init_radius: 0.2765
-    initial_low_height_offset: -0.10
-    initial_high_height_offset: 0.10
-    process_noise_xy: 10.0
-    process_noise_z: 10.0
-    process_noise_yaw: 100.0
-    angular_velocity_clamp: 2.51
-    converged_min_updates: 10
-    match_yaw_sigma: 0.20
-    match_pitch_sigma: 0.20
-    match_distance_sigma: 0.35
-    match_angle_sigma: 0.35
-    match_z_sigma: 0.08
-    match_yaw_gate: 1.0
-    match_pitch_gate: 0.9
-    match_distance_gate: 2.0
-    match_angle_gate: 1.0
-    match_z_gate: 0.35
-    reverse_direction_penalty: 2.5
-    max_pair_cost: 18.0
-    fast_reanchor_cost: 8.0
-    fast_reanchor_frames: 2
+    front_0_armor_pose_set_topic: "/aim_solver/front_0/armor_pose_sets" # 前相机 0 位姿输入
+    front_1_armor_pose_set_topic: "/aim_solver/front_1/armor_pose_sets" # 前相机 1 位姿输入
+    front_0_fallback_timeout_sec: 0.2 # 前相机 0 无数据时的回退超时
+    enable_front_1_fallback: false # 是否启用前相机 1 回退
+    outpost_state_topic: "/aim_outpost_predictor/outpost_state" # 前哨站状态输出
+    enable_visualization: true # 是否发布可视化
+    visualization_topic: "/aim_outpost_predictor/visualization" # 可视化话题
+    world_frame_id: "gimbal_world" # 世界坐标系
+    gimbal_frame_id: "gimbal_small_yaw" # 云台坐标系
+    tf_lookup_timeout_sec: 0.01 # TF 查询超时（秒）
+    armor_gimbal_yaw_gate_deg: 70.0 # 接受装甲板的云台偏航门限（度）
+    outpost_id: 6 # 前哨站目标 ID
+    max_lost_count: 15 # 连续丢失多少帧后删除跟踪
+    min_consecutive_detections_to_track: 2 # 建立跟踪所需连续检测次数
+    max_nis_failure_ratio: 0.4 # NIS 检验失败比例上限
+    init_radius: 0.2765 # 初始轨道半径（米）
+    initial_low_height_offset: -0.10 # 初始低装甲高度偏移（米）
+    initial_high_height_offset: 0.10 # 初始高装甲高度偏移（米）
+    process_noise_xy: 10.0 # XY 过程噪声
+    process_noise_z: 10.0 # Z 过程噪声
+    process_noise_yaw: 100.0 # 偏航过程噪声
+    angular_velocity_clamp: 2.51 # 角速度限幅（rad/s）
+    converged_min_updates: 10 # 判断滤波收敛所需更新次数
+    match_yaw_sigma: 0.20 # 匹配偏航误差尺度
+    match_pitch_sigma: 0.20 # 匹配俯仰误差尺度
+    match_distance_sigma: 0.35 # 匹配距离误差尺度
+    match_angle_sigma: 0.35 # 匹配装甲板角度误差尺度
+    match_z_sigma: 0.08 # 匹配高度误差尺度
+    match_yaw_gate: 1.0 # 偏航匹配门限
+    match_pitch_gate: 0.9 # 俯仰匹配门限
+    match_distance_gate: 2.0 # 距离匹配门限
+    match_angle_gate: 1.0 # 角度匹配门限
+    match_z_gate: 0.35 # 高度匹配门限
+    reverse_direction_penalty: 2.5 # 旋转方向相反时增加的代价
+    max_pair_cost: 18.0 # 允许的最大匹配代价
+    fast_reanchor_cost: 8.0 # 快速重新锚定的代价阈值
+    fast_reanchor_frames: 2 # 触发快速重新锚定所需帧数

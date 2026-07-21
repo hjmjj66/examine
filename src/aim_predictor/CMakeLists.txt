@@ -53,6 +53,14 @@ install(DIRECTORY config
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_measurement_noise test/test_measurement_noise.cpp)
+  if(TARGET test_measurement_noise)
+    target_include_directories(test_measurement_noise PRIVATE
+      include
+      ${EIGEN3_INCLUDE_DIRS}
+    )
+  endif()
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

@@ -10,13 +10,16 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>aim_msgs</depend>
+  <depend>eigen3_cmake_module</depend>
+  <depend>builtin_interfaces</depend>
   <depend>rclcpp</depend>
   <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>geometry_msgs</depend>
   <depend>gimbal_driver</depend>
   <!-- <depend>gimbal_driver</depend> -->
-  <depend>aim_target_msgs</depend>
+  <depend>sentry_msgs</depend>
   <depend>std_msgs</depend>
 
   <exec_depend>launch</exec_depend>
@@ -25,6 +28,7 @@
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

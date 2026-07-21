@@ -67,7 +67,7 @@ private:
   bool solveCalibration(SolveResult & result) const;
 
   static cv::Mat toDoubleMatrix(const cv::Mat & input);
-  cv::Mat buildBaseToGimbalRotation(double yaw_rad, double pitch_rad) const;
+  cv::Mat buildBaseToGimbalTransform(double yaw_rad, double pitch_rad) const;
   cv::Mat cameraToOpticalRotation() const;
   std::vector<cv::Point3f> boardObjectPoints() const;
   double computeReprojectionError(
@@ -98,6 +98,7 @@ private:
   double yaw_sign_{1.0};
   double pitch_sign_{1.0};
   double min_angle_delta_rad_{0.0};
+  double barrel_offset_z_{0.0};
   int board_cols_{9};
   int board_rows_{6};
   int min_samples_{8};

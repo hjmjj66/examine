@@ -71,7 +71,21 @@ install(DIRECTORY config
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+
+  ament_add_gtest(test_gimbal_kinematics
+    test/test_gimbal_kinematics.cpp
+  )
+  if(TARGET test_gimbal_kinematics)
+    target_include_directories(test_gimbal_kinematics PRIVATE
+      include
+      /usr/include/opencv4
+    )
+    target_link_libraries(test_gimbal_kinematics
+      ${OpenCV_LIBS}
+    )
+  endif()
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()

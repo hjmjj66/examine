@@ -20,13 +20,15 @@ public:
   : Node("sentry_tf_node")
   {
     declare_parameter<std::string>("gimbal_topic", "/ly/gimbal/angles");
-    declare_parameter<std::string>("world_frame",  "gimbal_world");
-    declare_parameter<std::string>("yaw_frame",  "gimbal_small_yaw");
-    declare_parameter<std::string>("barrel_joint_frame",  "gimbal_barrel_joint");
-    declare_parameter<std::string>("barrel_frame",  "gimbal_barrel");
+    declare_parameter<std::string>("base_frame", "base_link");
+    declare_parameter<std::string>("world_frame", "gimbal_world");
+    declare_parameter<std::string>("yaw_frame", "gimbal_small_yaw");
+    declare_parameter<std::string>("barrel_joint_frame", "gimbal_barrel_joint");
+    declare_parameter<std::string>("barrel_frame", "gimbal_barrel");
     declare_parameter<double>("barrel_offset_z", 0.0);
 
-    world_frame_  = get_parameter("world_frame").as_string();
+    base_frame_ = get_parameter("base_frame").as_string();
+    world_frame_ = get_parameter("world_frame").as_string();
     yaw_frame_ = get_parameter("yaw_frame").as_string();
     barrel_joint_frame_ = get_parameter("barrel_joint_frame").as_string();
     barrel_frame_ = get_parameter("barrel_frame").as_string();
@@ -36,7 +38,7 @@ public:
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
     publishBarrelOffsetStatic();
-    
+
     gimbal_sub_ = create_subscription<gimbal_driver::msg::GimbalAngles>(
       gimbal_topic,
       rclcpp::SensorDataQoS(),
@@ -46,10 +48,10 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "sentry_tf_node started. topic=%s, chain: %s -> %s and %s --static(+Z)-> %s --pitch-> %s "
+      "sentry_tf_node started. topic=%s, chain: %s --yaw-> %s -> %s and %s --static(+Z)-> %s --pitch-> %s "
       "(barrel_offset_z=%.3f m)",
-      gimbal_topic.c_str(), yaw_frame_.c_str(), world_frame_.c_str(), yaw_frame_.c_str(),
-      barrel_joint_frame_.c_str(), barrel_frame_.c_str(), barrel_offset_z_);
+      gimbal_topic.c_str(), base_frame_.c_str(), yaw_frame_.c_str(), world_frame_.c_str(),
+      yaw_frame_.c_str(), barrel_joint_frame_.c_str(), barrel_frame_.c_str(), barrel_offset_z_);
   }
 
 private:
@@ -87,6 +89,18 @@ private:
 
     const tf2::Quaternion q_yaw_inverse = q_yaw.inverse();
 
+    geometry_msgs::msg::TransformStamped ts_yaw;
+    ts_yaw.header.stamp = t;
+    ts_yaw.header.frame_id = base_frame_;
+    ts_yaw.child_frame_id = yaw_frame_;
+    ts_yaw.transform.translation.x = 0.0;
+    ts_yaw.transform.translation.y = 0.0;
+    ts_yaw.transform.translation.z = 0.0;
+    ts_yaw.transform.rotation.x = q_yaw.x();
+    ts_yaw.transform.rotation.y = q_yaw.y();
+    ts_yaw.transform.rotation.z = q_yaw.z();
+    ts_yaw.transform.rotation.w = q_yaw.w();
+
     geometry_msgs::msg::TransformStamped ts_world;
     ts_world.header.stamp = t;
     ts_world.header.frame_id = yaw_frame_;
@@ -111,12 +125,13 @@ private:
     ts_pitch.transform.rotation.z = q_pitch.z();
     ts_pitch.transform.rotation.w = q_pitch.w();
 
-    tf_broadcaster_->sendTransform({ts_world, ts_pitch});
+    tf_broadcaster_->sendTransform({ts_yaw, ts_world, ts_pitch});
   }
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::unique_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
   rclcpp::Subscription<gimbal_driver::msg::GimbalAngles>::SharedPtr gimbal_sub_;
+  std::string base_frame_;
   std::string world_frame_;
   std::string yaw_frame_;
   std::string barrel_joint_frame_;

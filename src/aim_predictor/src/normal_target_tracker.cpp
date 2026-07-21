@@ -49,6 +49,9 @@ void NormalTargetTracker::predict(const rclcpp::Time & stamp)
   if (!initialized_) {
     return;
   }
+  if (stamp < last_stamp_) {
+    return;
+  }
   const double dt = std::max(0.0, (stamp - last_stamp_).seconds());
   last_stamp_ = stamp;
 
@@ -108,7 +111,9 @@ void NormalTargetTracker::predict(const rclcpp::Time & stamp)
   ekf_.predict(f, q, transition);
 }
 
-void NormalTargetTracker::update(const ArmorMeasurement & armor)
+void NormalTargetTracker::update(
+  const ArmorMeasurement & armor,
+  const MeasurementNoiseConfig & measurement_noise_config)
 {
   if (!initialized_) {
     return;
@@ -126,11 +131,8 @@ void NormalTargetTracker::update(const ArmorMeasurement & armor)
   const double center_yaw = std::atan2(armor.xyz.y(), armor.xyz.x());
   const double delta_angle = limitRad(armor.ypr.x() - center_yaw);
 
-  Eigen::VectorXd r_diag(4);
-  r_diag << 4e-3,
-    4e-3,
-    std::log(std::abs(delta_angle) + 1.0) + 0.1,
-    std::log(std::abs(armor.ypd.z()) + 1.0) / 200.0 + 9e-2;
+  const Eigen::Vector4d r_diag = measurementNoiseDiagonal(
+    delta_angle, armor.ypd.z(), measurement_noise_config);
   const Eigen::MatrixXd r = r_diag.asDiagonal();
 
   auto observation = [&](const Eigen::VectorXd & x) {

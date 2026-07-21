@@ -1,0 +1,7 @@
+464:          selected_target_cache_.valid = msg->valid;
+479:          msg->yaw, msg->pitch, msg->yaw_omega, msg->pitch_omega,
+480:          msg->yaw_alpha, msg->pitch_alpha, msg->header.stamp, true);
+490:          msg->yaw, msg->pitch, 0.0, 0.0, 0.0, 0.0, msg->header.stamp, false);
+495:        if (msg->has_initial_speed && msg->initial_speed > min_bullet_speed_) {
+497:            bullet_speed_ = msg->initial_speed;
+500:              msg->initial_speed * bullet_speed_alpha_ +

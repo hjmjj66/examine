@@ -1,36 +1,48 @@
 gx_camera_node:
   ros__parameters:
-    device_sn: "KE0200060396"
-    device_index: 1
-    frame_id: "gx_camera_0"
-    image_topic: "/gx_camera_0/image_raw"
-    camera_info_topic: "/gx_camera_0/camera_info"
-    publish_rate: 100.0
+    device_sn: "KE0200060396" # 相机序列号
+    device_index: 1 # 设备索引
+    frame_id: "gx_camera_0_optical_frame" # 图像光学坐标系
+    image_topic: "/gx_camera_0/image_raw" # 原始图像话题
+    camera_info_topic: "/gx_camera_0/camera_info" # 相机内参话题
+    publish_rate: 200.0 # 图像发布频率（Hz）
+    # GX device exposure timestamp -> ROS time mapping.
+    use_device_timestamp: true # 是否使用相机设备时间戳
+    timestamp_offset_sec: 0.0 # 设备时间戳的固定偏移（秒）
+    # Leave at 0.0: if the SDK does not expose the frequency, the driver
+    # estimates it from two timestamp latch samples.
+    timestamp_tick_frequency_hz_override: 0.0 # 覆盖 SDK 时间戳频率；0 表示自动估计
+    timestamp_status_topic: "/gx_camera_0/timestamp_status" # 时间戳状态话题
+    timestamp_latch_period_sec: 0.25 # 时间戳校准周期（秒）
+    timestamp_latch_alpha: 0.25 # 时间戳校准指数平滑系数
+    timestamp_latch_max_correction_sec: 0.02 # 单次最大时间戳校正量（秒）
+    timestamp_frequency_estimation_interval_sec: 0.05 # 时间戳频率估计间隔（秒）
 
-    width: 1280
-    height: 1024
+    width: 1280 # 图像宽度（像素）
+    height: 1024 # 图像高度（像素）
 
-    gain: 25.0
-    auto_gain_max: 25.0
-    auto_gain_min: 2.0
-    auto_gain: 1
+    gain: 12.0 # 手动增益
+    auto_gain_max: 12.0 # 自动增益上限
+    auto_gain_min: 2.0 # 自动增益下限
+    auto_gain: 0 # 是否自动增益（0=关，非0=开）
 
-    exposure_time: 20000.0
-    auto_exposure_time_max: 30000.0
-    auto_exposure_time_min: 1000.0
-    auto_exposure: 1
+    exposure_time: 2000.0 # 手动曝光时间（微秒）
+    auto_exposure_time_max: 10000.0 # 自动曝光上限（微秒）
+    auto_exposure_time_min: 1000.0 # 自动曝光下限（微秒）
+    auto_exposure: 0 # 是否自动曝光（0=关，非0=开）
 
-    red_balance_ratio: 1.8906
-    green_balance_ratio: 1.0
-    blue_balance_ratio: 1.5703
+    red_balance_ratio: 1.2000 # 红通道白平衡倍率
+    green_balance_ratio: 1.0 # 绿通道白平衡倍率
+    blue_balance_ratio: 1.2800 # 蓝通道白平衡倍率
+    auto_balance_mode: "once" # 自动白平衡模式：once/continuous/off
 
-    camera_fx: 2594.8668197346
-    camera_fy: 2593.9303479068
-    camera_cx: 623.6194463792
-    camera_cy: 487.9543574800
+    camera_fx: 2594.8668197346 # X 方向焦距（像素）
+    camera_fy: 2593.9303479068 # Y 方向焦距（像素）
+    camera_cx: 623.6194463792 # 主点 X 坐标（像素）
+    camera_cy: 487.9543574800 # 主点 Y 坐标（像素）
 
-    dist_k1: 0.0013295332
-    dist_k2: -0.3225360920
-    dist_p1: 0.0008215090
-    dist_p2: 0.0001941072
-    dist_k3: 7.0936030151
+    dist_k1: 0.0013295332 # 径向畸变系数 k1
+    dist_k2: -0.3225360920 # 径向畸变系数 k2
+    dist_p1: 0.0008215090 # 切向畸变系数 p1
+    dist_p2: 0.0001941072 # 切向畸变系数 p2
+    dist_k3: 7.0936030151 # 径向畸变系数 k3

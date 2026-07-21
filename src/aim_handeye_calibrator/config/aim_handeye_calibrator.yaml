@@ -1,25 +1,28 @@
 /**:
   ros__parameters:
-    image_topic: "/gx_camera_0/image_raw"
-    camera_info_topic: "/gx_camera_0/camera_info"
-    gimbal_state_topic: "/ly/gimbal/angles"
-    debug_image_topic: "/aim_handeye/debug_image"
-    parent_frame_id: "gimbal_barrel"
-    child_frame_id: "gx_camera_0"
-    output_tf_section: "barrel_to_camera_0"
-    handeye_method: "tsai"
-    output_file: ""
-    use_camera_info_topic: false
-    angles_in_degree: true
-    board_cols: 11
-    board_rows: 8
-    min_samples: 8
-    square_size_m: 0.030
-    yaw_sign: 1.0
-    pitch_sign: -1.0
-    min_angle_delta_deg: 2.0
-    camera_matrix: [2594.8668197346, 0.0, 623.6194463792,
+    image_topic: "/gx_camera_0/image_raw" # 标定图像话题
+    camera_info_topic: "/gx_camera_0/camera_info" # 相机内参话题
+    gimbal_state_topic: "/ly/gimbal/angles" # 云台角度话题
+    debug_image_topic: "/aim_handeye/debug_image" # 角点调试图像话题
+    parent_frame_id: "gimbal_barrel" # 外参父坐标系
+    child_frame_id: "gx_camera_0" # 外参子坐标系
+    output_tf_section: "barrel_to_camera_0" # 结果写入的 TF 配置段名称
+    handeye_method: "tsai" # 手眼标定算法
+    output_file: "" # 标定结果输出文件
+    use_camera_info_topic: false # 是否从 camera_info 读取内参
+    use_pitch: true # 是否使用云台俯仰运动
+    # yaw axis reference point to pitch axis center +Z offset.
+    barrel_offset_z: 0.320 # 偏航轴到俯仰轴的 Z 向偏移（米）
+    angles_in_degree: true # 云台角度输入是否为度
+    board_cols: 11 # 标定板列数
+    board_rows: 8 # 标定板行数
+    min_samples: 8 # 最少有效样本数
+    square_size_m: 0.030 # 标定板方格边长（米）
+    yaw_sign: 1.0 # 偏航角符号修正
+    pitch_sign: -1.0 # 俯仰角符号修正
+    min_angle_delta_deg: 2.0 # 采样所需的最小角度变化（度）
+    camera_matrix: [2594.8668197346, 0.0, 623.6194463792, # 3x3 相机内参矩阵（行优先）
                     0.0, 2593.9303479068, 487.9543574800,
                     0.0, 0.0, 1.0]
-    distortion_coefficients: [0.0013295332, -0.3225360920, 0.0008215090,
+    distortion_coefficients: [0.0013295332, -0.3225360920, 0.0008215090, # 畸变系数 [k1,k2,p1,p2,k3]
                                0.0001941072, 7.0936030151]

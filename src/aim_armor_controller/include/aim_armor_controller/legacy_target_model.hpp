@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -15,6 +16,7 @@
 #include "aim_msgs/msg/outpost_state.hpp"
 #include "aim_msgs/msg/target_state.hpp"
 #include "aim_armor_controller/outpost_fire_gate.hpp"
+#include "aim_armor_controller/armor_selection_policy.hpp"
 
 namespace aim_armor_controller
 {
@@ -30,6 +32,7 @@ struct LegacyTargetModel
   std_msgs::msg::Header header;
   std::uint8_t id{0};
   bool jumped{false};
+  bool converged{false};
   geometry_msgs::msg::Point center;
   geometry_msgs::msg::Vector3 velocity;
   double yaw{0.0};
@@ -42,11 +45,13 @@ struct LegacyTargetModel
   int armor_count{4};
   bool has_primary_armor{false};
   int primary_slot{-1};
+  std::array<bool, 3> visible_slots{{false, false, false}};
 };
 
 struct LegacyAimCandidate
 {
   bool valid{false};
+  bool fire_allowed{true};
   geometry_msgs::msg::Point point_world;
   double armor_yaw_world{0.0};
   int armor_index{0};
@@ -68,6 +73,7 @@ inline LegacyTargetModel legacyTargetModelFromArmorSet(
   model.header = target.header;
   model.id = target.id;
   model.jumped = target.jumped;
+  model.converged = target.converged;
   model.center = makeLegacyPoint(target.center_x, target.center_y, target.center_z);
   model.velocity.x = target.velocity_x;
   model.velocity.y = target.velocity_y;
@@ -95,6 +101,7 @@ inline LegacyTargetModel legacyTargetModelFromTargetState(
   model.header = header;
   model.id = target.id;
   model.jumped = target.jumped;
+  model.converged = target.converged;
   model.center = target.center;
   model.velocity = target.velocity;
   model.yaw = target.yaw;
@@ -114,6 +121,7 @@ inline LegacyTargetModel legacyTargetModelFromOutpostState(const aim_msgs::msg::
   model.header = target.header;
   model.id = target.id;
   model.jumped = target.jumped;
+  model.converged = target.converged;
   model.center = target.center;
   model.velocity = target.velocity;
   model.yaw = target.yaw;
@@ -124,6 +132,7 @@ inline LegacyTargetModel legacyTargetModelFromOutpostState(const aim_msgs::msg::
   model.armor_count = 3;
   model.has_primary_armor = target.has_primary_armor;
   model.primary_slot = target.primary_slot;
+  model.visible_slots = target.visible_slots;
   return model;
 }
 
@@ -203,76 +212,8 @@ inline LegacyAimCandidate makeLegacyAimCandidate(const LegacyTargetModel & targe
   return candidate;
 }
 
-inline std::optional<int> chooseLegacyOutpostArmorIndex(const LegacyTargetModel & target)
-{
-  const auto armors = buildLegacyArmors(target);
-  if (armors.empty()) {
-    return std::nullopt;
-  }
-
-  int best_index = 0;
-  double best_yaw_error = std::numeric_limits<double>::infinity();
-  for (std::size_t i = 0; i < armors.size(); ++i) {
-    const double yaw_error = std::abs(legacyArmorFacingError(target, armors[i]));
-    if (yaw_error < best_yaw_error) {
-      best_yaw_error = yaw_error;
-      best_index = static_cast<int>(i);
-    }
-  }
-  return best_index;
-}
-
-inline std::optional<int> chooseLegacyLowSpeedArmorIndex(
-  const LegacyTargetModel & target,
-  double & lock_index)
-{
-  const auto armors = buildLegacyArmors(target);
-  if (armors.empty()) {
-    return std::nullopt;
-  }
-
-  const double center_yaw = std::atan2(target.center.y, target.center.x);
-  std::vector<double> delta_angle_list;
-  delta_angle_list.reserve(armors.size());
-  for (const auto & armor : armors) {
-    delta_angle_list.push_back(limitRad(armor.yaw - center_yaw));
-  }
-
-  std::vector<int> id_list;
-  for (std::size_t i = 0; i < armors.size(); ++i) {
-    if (std::abs(delta_angle_list[i]) > 60.0 * kPi / 180.0) {
-      continue;
-    }
-    id_list.push_back(static_cast<int>(i));
-  }
-
-  if (id_list.empty()) {
-    return std::nullopt;
-  }
-
-  int selected_index = id_list.front();
-  if (id_list.size() > 1U) {
-    const int id0 = id_list[0];
-    const int id1 = id_list[1];
-    if (lock_index != id0 && lock_index != id1) {
-      lock_index =
-        std::abs(delta_angle_list[static_cast<std::size_t>(id0)]) <
-        std::abs(delta_angle_list[static_cast<std::size_t>(id1)]) ? id0 : id1;
-    }
-    selected_index = static_cast<int>(lock_index);
-  } else {
-    lock_index = -1.0;
-  }
-
-  return selected_index;
-}
-
-inline LegacyAimCandidate chooseLegacyAimPoint(
-  const LegacyTargetModel & target,
-  const LegacyTargetModel * low_speed_selection_target,
-  double & lock_index,
-  double comming_angle_rad,
-  double leaving_angle_rad)
+inline LegacyAimCandidate chooseClosestFacingArmorAsMpcFallback(
+  const LegacyTargetModel & target)
 {
   LegacyAimCandidate candidate;
   const auto armors = buildLegacyArmors(target);
@@ -280,86 +221,169 @@ inline LegacyAimCandidate chooseLegacyAimPoint(
     return candidate;
   }
 
-  if (target.armor_count == 3) {
-    const LegacyTargetModel & selection_target =
-      low_speed_selection_target != nullptr ? *low_speed_selection_target : target;
-    const auto selected_index = chooseLegacyOutpostArmorIndex(selection_target);
-    if (!selected_index.has_value()) {
-      return candidate;
-    }
-    return makeLegacyAimCandidate(target, *selected_index);
-  }
-
-  if (!target.jumped) {
-    candidate.valid = true;
-    candidate.point_world = armors.front().position;
-    candidate.armor_yaw_world = armors.front().yaw;
-    candidate.armor_index = 0;
-    return candidate;
-  }
-
-  constexpr double kLowSpeedAngularVelocityThreshold = 2.0;
-  if (std::abs(target.angular_velocity) <= kLowSpeedAngularVelocityThreshold) {
-    const LegacyTargetModel & selection_target =
-      low_speed_selection_target != nullptr ? *low_speed_selection_target : target;
-    const auto selected_index = chooseLegacyLowSpeedArmorIndex(selection_target, lock_index);
-    if (!selected_index.has_value()) {
-      return candidate;
-    }
-    return makeLegacyAimCandidate(target, *selected_index);
-  }
-
-  const double center_yaw = std::atan2(target.center.y, target.center.x);
-  std::vector<double> delta_angle_list;
-  delta_angle_list.reserve(armors.size());
-  for (const auto & armor : armors) {
-    delta_angle_list.push_back(limitRad(armor.yaw - center_yaw));
-  }
-
-  struct SpinningCandidate
-  {
-    std::size_t index;
-    double delta_angle;
-    bool coming_side;
-  };
-
-  std::vector<SpinningCandidate> spinning_candidates;
-  spinning_candidates.reserve(armors.size());
+  std::size_t selected_index = 0U;
+  double best_facing_error = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < armors.size(); ++i) {
-    if (std::abs(delta_angle_list[i]) > comming_angle_rad) {
-      continue;
+    const double facing_error = std::abs(legacyArmorFacingError(target, armors[i]));
+    if (facing_error < best_facing_error) {
+      selected_index = i;
+      best_facing_error = facing_error;
     }
-
-    const double delta_angle = delta_angle_list[i];
-    const bool inside_leaving_window = target.angular_velocity > 0.0 ?
-      delta_angle < leaving_angle_rad :
-      delta_angle > -leaving_angle_rad;
-    if (!inside_leaving_window) {
-      continue;
-    }
-
-    spinning_candidates.push_back(
-      SpinningCandidate{
-        i,
-        delta_angle,
-        delta_angle * target.angular_velocity < 0.0});
   }
 
-  if (spinning_candidates.empty()) {
-    return candidate;
-  }
-
-  const auto best_spinning_candidate = std::min_element(
-    spinning_candidates.begin(), spinning_candidates.end(),
-    [](const SpinningCandidate & lhs, const SpinningCandidate & rhs) {
-      if (lhs.coming_side != rhs.coming_side) {
-        return lhs.coming_side;
-      }
-      return std::abs(lhs.delta_angle) < std::abs(rhs.delta_angle);
-    });
-
-  return makeLegacyAimCandidate(target, static_cast<int>(best_spinning_candidate->index));
+  candidate.valid = true;
+  candidate.fire_allowed = false;
+  candidate.point_world = armors[selected_index].position;
+  candidate.armor_yaw_world = armors[selected_index].yaw;
+  candidate.armor_index = static_cast<int>(selected_index);
+  return candidate;
 }
+
+inline ArmorSelectionInput makeLegacySelectionInput(
+  const LegacyTargetModel & target, int locked_index)
+{
+  const auto armors = buildLegacyArmors(target);
+  ArmorSelectionInput input;
+  input.locked_index = locked_index;
+  input.angular_velocity = target.angular_velocity;
+  input.radius = target.radius;
+  input.distance = std::hypot(target.center.x, target.center.y);
+  input.is_outpost = target.armor_count == 3;
+  input.tracking_converged = target.converged;
+  input.candidates.reserve(armors.size());
+  for (std::size_t i = 0; i < armors.size(); ++i) {
+    ArmorSelectionCandidate candidate;
+    candidate.facing_error = legacyArmorFacingError(target, armors[i]);
+    candidate.observed =
+      !input.is_outpost ||
+      (i < target.visible_slots.size() && target.visible_slots[i]);
+    input.candidates.push_back(candidate);
+  }
+  return input;
+}
+
+inline ArmorSelectionConfig makeLegacySelectionConfig(
+  bool enable_smart_selector,
+  double comming_angle_rad,
+  double leaving_angle_rad,
+  double response_speed_rad_s,
+  double min_angular_velocity_rad_s,
+  bool allow_predicted_outpost_slots)
+{
+  ArmorSelectionConfig config;
+  config.enable_smart_selector = enable_smart_selector;
+  config.coming_angle_rad = comming_angle_rad;
+  config.leaving_angle_rad = leaving_angle_rad;
+  config.response_speed_rad_s = response_speed_rad_s;
+  config.min_angular_velocity_rad_s = min_angular_velocity_rad_s;
+  config.allow_predicted_outpost_slots = allow_predicted_outpost_slots;
+  return config;
+}
+
+inline std::optional<int> chooseLegacyOutpostArmorIndex(
+  const LegacyTargetModel & target, double facing_gate_rad = 0.0)
+{
+  ArmorSelectionConfig config;
+  config.allow_predicted_outpost_slots = false;
+  const auto result = selectArmorIndex(makeLegacySelectionInput(target, -1), config);
+  if (!result.valid) {
+    return std::nullopt;
+  }
+  if (facing_gate_rad > 0.0) {
+    const auto armors = buildLegacyArmors(target);
+    if (
+      result.index < 0 || result.index >= static_cast<int>(armors.size()) ||
+      std::abs(legacyArmorFacingError(target, armors[static_cast<std::size_t>(result.index)])) >
+      facing_gate_rad)
+    {
+      return std::nullopt;
+    }
+  }
+  return result.index;
+}
+
+inline std::optional<int> chooseMpcOutpostArmorIndex(const LegacyTargetModel & target)
+{
+  return chooseLegacyOutpostArmorIndex(target);
+}
+
+inline std::optional<int> chooseLegacyLowSpeedArmorIndex(
+  const LegacyTargetModel & target, double & lock_index)
+{
+  const ArmorSelectionConfig config;
+  const auto result = selectArmorIndex(
+    makeLegacySelectionInput(target, static_cast<int>(lock_index)), config);
+  if (!result.valid) {
+    return std::nullopt;
+  }
+  lock_index = static_cast<double>(result.index);
+  return result.index;
+}
+
+inline LegacyAimCandidate chooseLegacyAimPoint(
+  const LegacyTargetModel & target,
+  const LegacyTargetModel * low_speed_selection_target,
+  double & lock_index,
+  bool enable_smart_selector,
+  double smart_selector_max_angular_velocity,
+  double comming_angle_rad,
+  double leaving_angle_rad,
+  double selector_response_speed_rad_s = 0.01,
+  double selector_min_angular_velocity_rad_s = 0.6,
+  bool allow_predicted_outpost_slots = true)
+{
+  (void)low_speed_selection_target;
+  (void)smart_selector_max_angular_velocity;
+  const auto armors = buildLegacyArmors(target);
+  if (armors.empty()) {
+    LegacyAimCandidate invalid_candidate;
+    return invalid_candidate;
+  }
+
+  const auto config = makeLegacySelectionConfig(
+    enable_smart_selector,
+    comming_angle_rad,
+    leaving_angle_rad,
+    selector_response_speed_rad_s,
+    selector_min_angular_velocity_rad_s,
+    allow_predicted_outpost_slots);
+  const auto result = selectArmorIndex(
+    makeLegacySelectionInput(target, static_cast<int>(lock_index)), config);
+  if (!result.valid) {
+    LegacyAimCandidate invalid_candidate;
+    return invalid_candidate;
+  }
+
+  lock_index = static_cast<double>(result.index);
+  return makeLegacyAimCandidate(target, result.index);
+}
+
+inline LegacyAimCandidate chooseMpcAimPoint(
+  const LegacyTargetModel & target,
+  const LegacyTargetModel * low_speed_selection_target,
+  double & lock_index,
+  double low_speed_angular_velocity_threshold)
+{
+  (void)low_speed_selection_target;
+  (void)low_speed_angular_velocity_threshold;
+  const auto armors = buildLegacyArmors(target);
+  if (armors.empty()) {
+    LegacyAimCandidate invalid_candidate;
+    return invalid_candidate;
+  }
+
+  const ArmorSelectionConfig config;
+  const auto result = selectArmorIndex(
+    makeLegacySelectionInput(target, static_cast<int>(lock_index)), config);
+  if (!result.valid) {
+    LegacyAimCandidate invalid_candidate;
+    return invalid_candidate;
+  }
+
+  lock_index = static_cast<double>(result.index);
+  return makeLegacyAimCandidate(target, result.index);
+}
+
 
 inline LegacyAimCandidate chooseLegacySpinCenterAimPoint(
   const LegacyTargetModel & target,

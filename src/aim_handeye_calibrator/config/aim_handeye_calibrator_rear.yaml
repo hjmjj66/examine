@@ -1,26 +1,28 @@
 /**:
   ros__parameters:
-    image_topic: "/usb_camera/image_raw"
-    camera_info_topic: "/usb_camera/camera_info"
-    gimbal_state_topic: "/ly/gimbal/angles"
-    debug_image_topic: "/aim_handeye/debug_image_rear"
-    parent_frame_id: "gimbal_small_yaw"
-    child_frame_id: "usb_camera"
-    output_tf_section: "small_yaw_to_usb_camera"
-    handeye_method: "tsai"
-    output_file: ""
-    use_camera_info_topic: false
-    use_pitch: false
-    angles_in_degree: true
-    board_cols: 11
-    board_rows: 8
-    min_samples: 10
-    square_size_m: 0.030
-    yaw_sign: 1.0
-    pitch_sign: 1.0
-    min_angle_delta_deg: 3.0
-    camera_matrix: [549.8351599620, 0.0, 599.1912418111,
+    image_topic: "/usb_camera/image_raw" # 标定图像话题
+    camera_info_topic: "/usb_camera/camera_info" # 相机内参话题
+    gimbal_state_topic: "/ly/gimbal/angles" # 云台角度话题
+    debug_image_topic: "/aim_handeye/debug_image_rear" # 角点调试图像话题
+    parent_frame_id: "gimbal_small_yaw" # 外参父坐标系
+    child_frame_id: "usb_camera" # 外参子坐标系
+    output_tf_section: "small_yaw_to_usb_camera" # 结果写入的 TF 配置段
+    handeye_method: "tsai" # 手眼标定算法
+    output_file: "" # 标定结果输出文件
+    use_camera_info_topic: false # 是否从 camera_info 读取内参
+    use_pitch: false # 后相机不参与俯仰运动
+    # Rear camera is attached to the yaw stage and does not use pitch offset.
+    barrel_offset_z: 0.0 # 后相机安装在偏航机构上，无俯仰轴偏移
+    angles_in_degree: true # 云台角度输入是否为度
+    board_cols: 11 # 标定板列数
+    board_rows: 8 # 标定板行数
+    min_samples: 10 # 最少有效样本数
+    square_size_m: 0.030 # 标定板方格边长（米）
+    yaw_sign: 1.0 # 偏航角符号修正
+    pitch_sign: 1.0 # 俯仰角符号修正
+    min_angle_delta_deg: 3.0 # 采样最小角度变化（度）
+    camera_matrix: [549.8351599620, 0.0, 599.1912418111, # 3x3 相机内参矩阵（行优先）
                     0.0, 545.6222130545, 420.2722299780,
                     0.0, 0.0, 1.0]
-    distortion_coefficients: [0.1255592953, -0.1963274373, -0.0012630831,
+    distortion_coefficients: [0.1255592953, -0.1963274373, -0.0012630831, # 畸变系数 [k1,k2,p1,p2,k3]
                                -0.0034363489, 0.0630439860]
