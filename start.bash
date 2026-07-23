@@ -81,7 +81,7 @@ echo ""
 echo "--- ① TF 基础设施（优先启动）---"
 # launch_bg "gimbal_driver" ros2 launch gimbal_driver gimbal_driver.launch.py
 launch_bg "sentry_tf" ros2 launch sentry_tf sentry_tf.launch.py
-sleep 2
+sleep 1
 check_processes
 
 echo ""
@@ -89,7 +89,7 @@ echo "--- ② 三相机检测链路 ---"
 launch_bg "front camera #0 detector" ros2 launch aim_armor_detector front_camera_0_detector.launch.py
 launch_bg "front camera #1 detector" ros2 launch aim_armor_detector front_camera_1_detector.launch.py
 launch_bg "back camera detector" ros2 launch aim_armor_detector back_camera_detector.launch.py
-sleep 2
+sleep 1
 check_processes
 
 echo ""
@@ -104,7 +104,6 @@ echo ""
 echo "--- ④ 决策 + 弹道控制 ---"
 launch_bg "aim_armor_decider" ros2 launch aim_armor_decider aim_decider.launch.py
 launch_bg "aim_armor_controller" ros2 launch aim_armor_controller armor_controller.launch.py
-sleep 1
 check_processes
 
 echo ""

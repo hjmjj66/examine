@@ -21,9 +21,13 @@ namespace
 
 constexpr double kNormalTargetRadius = 0.2;
 
-rclcpp::QoS makeHighRateQos()
+rclcpp::QoS makeHighRateQos(std::size_t depth)
 {
-  return rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+  return rclcpp::QoS(
+    rclcpp::KeepLast(
+      std::max<std::size_t>(
+        1U,
+        depth))).best_effort().durability_volatile();
 }
 
 rclcpp::QoS makeRealtimeTfQos()
@@ -78,6 +82,8 @@ AimPredictorNode::AimPredictorNode(const rclcpp::NodeOptions & options)
   declare_parameter<double>("confirmation_min_interval_sec", 0.03);
   declare_parameter<double>("front_target_hold_sec", 0.10);
   declare_parameter<double>("target_lost_timeout_sec", 0.20);
+  declare_parameter<double>("time_window_sec", 0.001);
+  declare_parameter<int>("pending_queue_capacity", 16);
 
   const auto declare_measurement_noise_parameters = [this](const std::string & prefix) {
       declare_parameter<double>(prefix + "measurement_noise_yaw_variance_scale", 1.0);
@@ -139,6 +145,9 @@ AimPredictorNode::AimPredictorNode(const rclcpp::NodeOptions & options)
     0.0, get_parameter("front_target_hold_sec").as_double());
   target_lost_timeout_sec_ = std::max(
     0.0, get_parameter("target_lost_timeout_sec").as_double());
+  time_window_sec_ = std::max(0.0, get_parameter("time_window_sec").as_double());
+  pending_queue_capacity_ = static_cast<std::size_t>(std::max(
+      1, static_cast<int>(get_parameter("pending_queue_capacity").as_int())));
 
   const auto load_measurement_noise_config =
     [this](const std::string & prefix, MeasurementNoiseConfig & config) {
@@ -154,8 +163,13 @@ AimPredictorNode::AimPredictorNode(const rclcpp::NodeOptions & options)
   load_measurement_noise_config("front_0_", front_0_measurement_noise_config_);
   load_measurement_noise_config("front_1_", front_1_measurement_noise_config_);
   load_measurement_noise_config("back_", back_measurement_noise_config_);
+  frame_window_ = std::make_unique<CameraFrameWindow<PendingFrame>>(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(time_window_sec_)),
+    pending_queue_capacity_);
 
-  const auto high_rate_qos = makeHighRateQos();
+
+  const auto high_rate_qos = makeHighRateQos(pending_queue_capacity_);
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(
     *tf_buffer_, this, true, makeRealtimeTfQos(), tf2_ros::StaticListenerQoS());
@@ -181,9 +195,94 @@ AimPredictorNode::AimPredictorNode(const rclcpp::NodeOptions & options)
   initialize_input(front_0_input_, CameraSource::Front0);
   initialize_input(front_1_input_, CameraSource::Front1);
   initialize_input(back_input_, CameraSource::Back);
+  processing_thread_ = std::thread(&AimPredictorNode::processingLoop, this);
 }
 
+AimPredictorNode::~AimPredictorNode()
+{
+  {
+    std::lock_guard<std::mutex> lock(pending_queue_mutex_);
+    stop_processing_ = true;
+  }
+  pending_queue_cv_.notify_one();
+  if (processing_thread_.joinable()) {
+    processing_thread_.join();
+  }
+}
 void AimPredictorNode::onCameraArmorPoseSets(
+  CameraSource source, const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
+{
+  enqueueCameraArmorPoseSets(source, msg);
+}
+
+void AimPredictorNode::enqueueCameraArmorPoseSets(
+  CameraSource source, const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
+{
+  if (!msg) {
+    return;
+  }
+
+  PendingFrame frame{
+    source,
+    msg,
+    rclcpp::Time(msg->header.stamp),
+    0,
+    std::chrono::steady_clock::now()};
+  bool dropped = false;
+  {
+    std::lock_guard<std::mutex> lock(pending_queue_mutex_);
+    frame.arrival_sequence = next_arrival_sequence_++;
+    dropped = frame_window_->enqueue(std::move(frame));
+    if (dropped) {
+      ++dropped_pending_frames_;
+    }
+  }
+  if (dropped) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "aim_predictor pending queue full; dropped_pending_frames=%llu",
+      static_cast<unsigned long long>(dropped_pending_frames_));
+  }
+  pending_queue_cv_.notify_one();
+}
+
+void AimPredictorNode::processingLoop()
+{
+  while (true) {
+    std::vector<PendingFrame> batch;
+    {
+      std::unique_lock<std::mutex> lock(pending_queue_mutex_);
+      while (!stop_processing_) {
+        if (frame_window_->empty()) {
+          pending_queue_cv_.wait(lock);
+          continue;
+        }
+        const auto deadline = frame_window_->nextDeadline();
+        if (!deadline.has_value()) {
+          continue;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now < *deadline) {
+          pending_queue_cv_.wait_until(lock, *deadline);
+          continue;
+        }
+        auto ready = frame_window_->takeReady(now);
+        if (ready.has_value()) {
+          batch = std::move(*ready);
+          break;
+        }
+      }
+      if (stop_processing_) {
+        return;
+      }
+    }
+    for (const auto & frame : batch) {
+      processCameraArmorPoseSets(frame.source, frame.msg);
+    }
+  }
+}
+
+void AimPredictorNode::processCameraArmorPoseSets(
   CameraSource source, const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
 {
   if (!msg) {
@@ -241,6 +340,14 @@ void AimPredictorNode::onArmorPoseSets(
 {
   const rclcpp::Time stamp(msg->header.stamp);
   if (pipeline.last_processed_stamp.has_value() && stamp < *pipeline.last_processed_stamp) {
+    const double late_ms = (*pipeline.last_processed_stamp - stamp).seconds() * 1000.0;
+    ++late_frames_;
+    max_late_ms_ = std::max(max_late_ms_, late_ms);
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "[%s] dropped late predictor frame source=%d late_ms=%.3f count=%llu max_ms=%.3f",
+      pipeline.name.c_str(), static_cast<int>(source), late_ms,
+      static_cast<unsigned long long>(late_frames_), max_late_ms_);
     RCLCPP_DEBUG(
       get_logger(), "[%s] dropped out-of-order measurement from camera source %d",
       pipeline.name.c_str(), static_cast<int>(source));

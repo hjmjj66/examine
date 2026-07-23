@@ -2,11 +2,15 @@
 
 #include <array>
 #include <chrono>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <geometry_msgs/msg/pose.hpp>
@@ -15,6 +19,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <visualization_msgs/msg/marker_array.hpp>
+#include "aim_predictor/camera_frame_window.hpp"
 
 #include "aim_predictor/normal_target_tracker.hpp"
 #include "aim_msgs/msg/armor_pose_set_array.hpp"
@@ -27,6 +32,7 @@ namespace aim_predictor
 class AimPredictorNode : public rclcpp::Node
 {
 public:
+  ~AimPredictorNode() override;
   explicit AimPredictorNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
@@ -51,6 +57,15 @@ private:
     rclcpp::Subscription<aim_msgs::msg::ArmorPoseSetArray>::SharedPtr armor_pose_sub;
   };
 
+  struct PendingFrame
+  {
+    CameraSource source{CameraSource::Front0};
+    aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg;
+    rclcpp::Time stamp{0, 0, RCL_ROS_TIME};
+    std::uint64_t arrival_sequence{0};
+    std::chrono::steady_clock::time_point arrival_time{};
+  };
+
   void onArmorPoseSets(
     Pipeline & pipeline,
     const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg,
@@ -58,6 +73,11 @@ private:
   void onCameraArmorPoseSets(
     CameraSource source, const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
   bool hasRecentFrontTarget(const rclcpp::Time & stamp) const;
+  void processingLoop();
+  void enqueueCameraArmorPoseSets(
+    CameraSource source, const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
+  void processCameraArmorPoseSets(
+    CameraSource source, const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
   const MeasurementNoiseConfig & measurementNoiseConfigFor(CameraSource source) const;
   void publishVisualization(Pipeline & pipeline, const std_msgs::msg::Header & header);
   std::optional<double> lookupGimbalYaw(const std_msgs::msg::Header & header);
@@ -73,6 +93,15 @@ private:
   CameraInput front_1_input_;
   CameraInput back_input_;
   std::array<std::optional<rclcpp::Time>, 2> latest_front_target_stamps_{};
+  std::unique_ptr<CameraFrameWindow<PendingFrame>> frame_window_;
+  std::mutex pending_queue_mutex_;
+  std::condition_variable pending_queue_cv_;
+  std::thread processing_thread_;
+  bool stop_processing_{false};
+  std::uint64_t next_arrival_sequence_{0};
+  std::uint64_t dropped_pending_frames_{0};
+  std::uint64_t late_frames_{0};
+  double max_late_ms_{0.0};
   std::string visualization_topic_;
   std::string world_frame_id_;
   std::string gimbal_frame_id_;
@@ -90,6 +119,8 @@ private:
   double front_target_hold_sec_{0.10};
   double target_lost_timeout_sec_{0.20};
   std::chrono::steady_clock::time_point last_delay_statistics_publish_time_{};
+  double time_window_sec_{0.001};
+  std::size_t pending_queue_capacity_{16};
   double delay_statistics_sum_ms_{0.0};
   double delay_statistics_max_ms_{0.0};
   double delay_statistics_latest_ms_{0.0};

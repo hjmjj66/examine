@@ -40,6 +40,8 @@ armor_controller_node:
     target_tf_timeout_sec: 0.10 # 目标 TF 查询超时时间（秒）
     # 目标消息超过该时长未更新则直接 fallback，避免使用陈旧时间戳反复查 TF
     target_msg_timeout_sec: 0.30 # 目标消息超过该时长未更新则回退（秒）
+    # 云台反馈超过该时长未收到则直接回退，禁止继续解算和开火
+    gimbal_state_timeout_sec: 0.10 # 云台反馈新鲜度阈值（秒）
     # 短暂丢失前哨 tracking 时保持最近有效目标，期间不允许开火。
     outpost_tracking_hold_sec: 0.10 # 前哨短暂丢跟踪时保持目标的时间（秒）
     max_angle_rate_deg_per_sec: 99999.9 # 控制角最大变化速度（yaw/pitch 共用，度/秒）

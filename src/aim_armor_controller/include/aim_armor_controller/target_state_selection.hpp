@@ -27,6 +27,11 @@ inline bool isZeroStamp(const builtin_interfaces::msg::Time & stamp)
   return stamp.sec == 0 && stamp.nanosec == 0;
 }
 
+inline bool isTargetStateReadyForControl(const aim_msgs::msg::TargetState & target)
+{
+  return target.tracking && target.converged;
+}
+
 inline bool isNewerStamp(
   const builtin_interfaces::msg::Time & lhs,
   const builtin_interfaces::msg::Time & rhs)

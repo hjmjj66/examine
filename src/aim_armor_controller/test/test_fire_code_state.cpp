@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "aim_armor_controller/fire_code_state.hpp"
+#include "aim_armor_controller/legacy_fire_control.hpp"
 
 namespace
 {
@@ -50,4 +51,20 @@ TEST(FireCodeState, RawEncodingKeepsFireStatusAndOtherFieldsSeparate)
   EXPECT_EQ(aim_armor_controller::encodeFireCodeRaw(state), 0x60U);
 }
 
+TEST(LegacyFireControl, ResetsArmorAfterLeavingFaceWindow)
+{
+  aim_armor_controller::LegacyFireControlState state;
+  const aim_armor_controller::LegacyFireControlInput input{
+    1, 0.0, 0.0, 1.0, 1.0, true, true, 0U};
+
+  EXPECT_TRUE(aim_armor_controller::evaluateLegacyFireControl(input, state).shoot_flag);
+  EXPECT_FALSE(aim_armor_controller::evaluateLegacyFireControl(input, state).shoot_flag);
+
+  auto outside_window = input;
+  outside_window.inside_face_window = false;
+  EXPECT_FALSE(
+    aim_armor_controller::evaluateLegacyFireControl(outside_window, state).shoot_flag);
+
+  EXPECT_TRUE(aim_armor_controller::evaluateLegacyFireControl(input, state).shoot_flag);
+}
 }  // namespace

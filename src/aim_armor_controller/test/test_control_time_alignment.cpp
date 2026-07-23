@@ -89,4 +89,26 @@ TEST(CommandRateLimiter, UsesShortestYawPathAcrossWrap)
   EXPECT_DOUBLE_EQ(result.yaw_deg, 181.0);
 }
 
+
+TEST(ControlTimeAlignment, RequiresFreshGimbalFeedback)
+{
+  using Clock = std::chrono::steady_clock;
+  const auto received_at = Clock::time_point{} + std::chrono::seconds(10);
+  const auto fresh_now = received_at + std::chrono::milliseconds(50);
+  const auto stale_now = received_at + std::chrono::milliseconds(110);
+
+  EXPECT_TRUE(aim_armor_controller::isFeedbackFresh(received_at, fresh_now, 0.10));
+  EXPECT_FALSE(aim_armor_controller::isFeedbackFresh(received_at, stale_now, 0.10));
+}
+
+TEST(ControlTimeAlignment, RejectsMissingGimbalFeedbackTimestamp)
+{
+  using Clock = std::chrono::steady_clock;
+  const auto zero_received_at = Clock::time_point{};
+  const auto current_time = zero_received_at + std::chrono::seconds(10);
+
+  EXPECT_FALSE(aim_armor_controller::isFeedbackFresh(
+    zero_received_at, current_time, 0.10));
+}
+
 }  // namespace

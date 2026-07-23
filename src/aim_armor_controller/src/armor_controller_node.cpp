@@ -76,6 +76,7 @@ struct GimbalState
   double yaw_acceleration_rad_s2{0.0};
   double pitch_acceleration_rad_s2{0.0};
   builtin_interfaces::msg::Time stamp;
+  std::chrono::steady_clock::time_point received_at{};
   bool valid{false};
 };
 
@@ -193,6 +194,7 @@ public:
     declare_parameter<std::string>("barrel_joint_frame", "gimbal_barrel_joint");
     declare_parameter<double>("target_tf_timeout_sec", 0.02);
     declare_parameter<double>("target_msg_timeout_sec", 0.10);
+    declare_parameter<double>("gimbal_state_timeout_sec", 0.10);
     declare_parameter<double>("outpost_tracking_hold_sec", 0.15);
     declare_parameter<double>("max_angle_rate_deg_per_sec", 60.0);
     declare_parameter<double>("armor_select_area_weight", 1.0);
@@ -289,6 +291,7 @@ public:
     barrel_joint_frame_ = get_parameter("barrel_joint_frame").as_string();
     target_tf_timeout_sec_ = get_parameter("target_tf_timeout_sec").as_double();
     target_msg_timeout_sec_ = get_parameter("target_msg_timeout_sec").as_double();
+    gimbal_state_timeout_sec_ = get_parameter("gimbal_state_timeout_sec").as_double();
     outpost_tracking_hold_sec_ = get_parameter("outpost_tracking_hold_sec").as_double();
     max_angle_rate_deg_per_sec_ =
       get_parameter("max_angle_rate_deg_per_sec").as_double();
@@ -527,6 +530,8 @@ private:
     const builtin_interfaces::msg::Time & stamp,
     bool has_dynamics)
   {
+    const auto received_at = std::chrono::steady_clock::now();
+    const rclcpp::Time received_ros_time = now();
     std::lock_guard<std::mutex> lock(data_mutex_);
     gimbal_state_.yaw_deg = yaw_deg;
     gimbal_state_.pitch_deg = pitch_deg;
@@ -543,10 +548,11 @@ private:
         static_cast<double>(pitch_alpha_deg_s2) * kPi / 180.0;
     }
     gimbal_state_.stamp = stamp;
+    gimbal_state_.received_at = received_at;
     gimbal_state_.valid = true;
 
     GimbalStateSample sample;
-    sample.stamp = aim_armor_controller::resolveControlStamp(stamp, now());
+    sample.stamp = aim_armor_controller::resolveControlStamp(stamp, received_ros_time);
     sample.yaw_rad = gimbal_state_.yaw_rad;
     sample.pitch_rad = gimbal_state_.pitch_rad;
     sample.yaw_velocity_rad_s = gimbal_state_.yaw_velocity_rad_s;
@@ -920,7 +926,11 @@ private:
       front_0.valid ? &front_0.msg : nullptr,
       front_1.valid ? &front_1.msg : nullptr,
       back.valid ? &back.msg : nullptr);
-    if (!match.has_value() || isTimedOut(match->header.stamp, control_stamp)) {
+    if (
+      !match.has_value() ||
+      !aim_armor_controller::isTargetStateReadyForControl(match->target) ||
+      isTimedOut(match->header.stamp, control_stamp))
+    {
       return active;
     }
 
@@ -1554,15 +1564,24 @@ private:
       gimbal_history = gimbal_state_history_;
     }
 
+    const auto current_steady_time = std::chrono::steady_clock::now();
+    const rclcpp::Time current_time = now();
     if (!gimbal.valid) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000,
         "fallback: reason=gimbal_feedback_missing");
       return;
     }
+    if (!aim_armor_controller::isFeedbackFresh(
+        gimbal.received_at, current_steady_time, gimbal_state_timeout_sec_)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "fallback: reason=gimbal_feedback_stale");
+      return;
+    }
 
     const rclcpp::Time control_stamp =
-      aim_armor_controller::resolveControlStamp(gimbal.stamp, now());
+      aim_armor_controller::resolveControlStamp(gimbal.stamp, current_time);
     ActiveTarget active_target =
       resolveActiveTarget(selected_target, front_0, front_1, back, outpost, control_stamp);
     const std::uint8_t outpost_id = outpost.valid ? outpost.msg.id : kDefaultOutpostId;
@@ -1768,6 +1787,7 @@ private:
   std::string barrel_joint_frame_{"gimbal_barrel_joint"};
   double target_tf_timeout_sec_{0.02};
   double target_msg_timeout_sec_{0.10};
+  double gimbal_state_timeout_sec_{0.10};
   double outpost_tracking_hold_sec_{0.15};
   double max_angle_rate_deg_per_sec_{60.0};
   double armor_select_area_weight_{1.0};

@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "aim_armor_controller/legacy_target_model.hpp"
+#include "aim_armor_controller/target_state_selection.hpp"
 #include "aim_armor_controller/mpc_target_model.hpp"
 #include "aim_outpost_predictor/front_camera_arbitrator.hpp"
 
@@ -41,6 +42,22 @@ aim_armor_controller::TargetModel makeMpcNormalTarget(
   target.jumped = true;
   target.visible_slots = {true, true, true};
   return target;
+}
+
+
+TEST(TargetStateSelection, RequiresTrackingAndConvergenceForControl)
+{
+  aim_msgs::msg::TargetState target;
+  target.tracking = true;
+  target.converged = true;
+  EXPECT_TRUE(aim_armor_controller::isTargetStateReadyForControl(target));
+
+  target.tracking = false;
+  EXPECT_FALSE(aim_armor_controller::isTargetStateReadyForControl(target));
+
+  target.tracking = true;
+  target.converged = false;
+  EXPECT_FALSE(aim_armor_controller::isTargetStateReadyForControl(target));
 }
 
 }  // namespace

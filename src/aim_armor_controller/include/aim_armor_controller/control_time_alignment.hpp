@@ -2,6 +2,7 @@
 #define AIM_ARMOR_CONTROLLER__CONTROL_TIME_ALIGNMENT_HPP_
 
 #include <algorithm>
+#include <chrono>
 
 #include <builtin_interfaces/msg/time.hpp>
 #include <rclcpp/time.hpp>
@@ -29,6 +30,22 @@ inline double ageAtControlStamp(
     return 0.0;
   }
   return std::max(0.0, (control_stamp - rclcpp::Time(measurement_stamp)).seconds());
+}
+
+inline bool isFeedbackFresh(
+  std::chrono::steady_clock::time_point received_at,
+  std::chrono::steady_clock::time_point current_time,
+  double timeout_sec)
+{
+  if (
+    timeout_sec <= 0.0 ||
+    received_at == std::chrono::steady_clock::time_point{})
+  {
+    return false;
+  }
+  const double age_sec =
+    std::chrono::duration<double>(current_time - received_at).count();
+  return age_sec >= 0.0 && age_sec <= timeout_sec;
 }
 
 }  // namespace aim_armor_controller

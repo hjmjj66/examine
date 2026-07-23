@@ -23,9 +23,13 @@ namespace
 
 constexpr double kPi = 3.14159265358979323846;
 
-rclcpp::QoS makeHighRateQos()
+rclcpp::QoS makeHighRateQos(std::size_t depth)
 {
-  return rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
+  return rclcpp::QoS(
+    rclcpp::KeepLast(
+      std::max<std::size_t>(
+        1U,
+        depth))).best_effort().durability_volatile();
 }
 
 rclcpp::QoS makeRealtimeTfQos()
@@ -628,6 +632,8 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
   declare_parameter<std::string>("front_1_armor_pose_set_topic", "/aim_solver/front_1/armor_pose_sets");
   declare_parameter<double>("front_0_fallback_timeout_sec", 0.2);
   declare_parameter<bool>("enable_front_1_fallback", false);
+  declare_parameter<double>("time_window_sec", 0.001);
+  declare_parameter<int>("pending_queue_capacity", 16);
   declare_parameter<std::string>("outpost_state_topic", "/aim_outpost_predictor/outpost_state");
   declare_parameter<bool>("enable_visualization", false);
   declare_parameter<std::string>("visualization_topic", "/aim_outpost_predictor/visualization");
@@ -669,6 +675,9 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
   front_0_fallback_timeout_sec_ = std::max(
     0.0, get_parameter("front_0_fallback_timeout_sec").as_double());
   enable_front_1_fallback_ = get_parameter("enable_front_1_fallback").as_bool();
+  time_window_sec_ = std::max(0.0, get_parameter("time_window_sec").as_double());
+  pending_queue_capacity_ = static_cast<std::size_t>(std::max(
+      1, static_cast<int>(get_parameter("pending_queue_capacity").as_int())));
   outpost_state_topic_ = get_parameter("outpost_state_topic").as_string();
   enable_visualization_ = get_parameter("enable_visualization").as_bool();
   visualization_topic_ = get_parameter("visualization_topic").as_string();
@@ -709,8 +718,12 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
   tracker_.setConfig(tracker_config_);
   front_camera_arbitrator_.setFallbackTimeout(front_0_fallback_timeout_sec_);
   front_camera_arbitrator_.setFallbackEnabled(enable_front_1_fallback_);
+  frame_window_ = std::make_unique<CameraFrameWindow<PendingFrame>>(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(time_window_sec_)),
+    pending_queue_capacity_);
 
-  const auto high_rate_qos = makeHighRateQos();
+  const auto high_rate_qos = makeHighRateQos(pending_queue_capacity_);
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(
     *tf_buffer_, this, true, makeRealtimeTfQos(), tf2_ros::StaticListenerQoS());
@@ -732,19 +745,123 @@ AimOutpostPredictorNode::AimOutpostPredictorNode(const rclcpp::NodeOptions & opt
     [this](const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg) {
       onArmorPoseSets(false, msg);
     });
+  processing_thread_ = std::thread(&AimOutpostPredictorNode::processingLoop, this);
+}
+
+AimOutpostPredictorNode::~AimOutpostPredictorNode()
+{
+  {
+    std::lock_guard<std::mutex> lock(pending_queue_mutex_);
+    stop_processing_ = true;
+  }
+  pending_queue_cv_.notify_one();
+  if (processing_thread_.joinable()) {
+    processing_thread_.join();
+  }
 }
 
 void AimOutpostPredictorNode::onArmorPoseSets(
   bool from_front_0,
   const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
 {
-  if (!from_front_0 && !enable_front_1_fallback_) {
+  enqueueArmorPoseSets(from_front_0, msg);
+}
+
+void AimOutpostPredictorNode::enqueueArmorPoseSets(
+  bool from_front_0,
+  const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
+{
+  if (!msg || (!from_front_0 && !enable_front_1_fallback_)) {
     return;
   }
-  const auto now = std::chrono::steady_clock::now();
+
+  PendingFrame frame{
+    from_front_0,
+    msg,
+    rclcpp::Time(msg->header.stamp),
+    0,
+    std::chrono::steady_clock::now()};
+  bool dropped = false;
+  {
+    std::lock_guard<std::mutex> lock(pending_queue_mutex_);
+    frame.arrival_sequence = next_arrival_sequence_++;
+    dropped = frame_window_->enqueue(std::move(frame));
+    if (dropped) {
+      ++dropped_pending_frames_;
+    }
+  }
+  if (dropped) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "aim_outpost_predictor pending queue full; dropped_pending_frames=%llu",
+      static_cast<unsigned long long>(dropped_pending_frames_));
+  }
+  pending_queue_cv_.notify_one();
+}
+
+void AimOutpostPredictorNode::processingLoop()
+{
+  while (true) {
+    std::vector<PendingFrame> batch;
+    {
+      std::unique_lock<std::mutex> lock(pending_queue_mutex_);
+      while (!stop_processing_) {
+        if (frame_window_->empty()) {
+          pending_queue_cv_.wait(lock);
+          continue;
+        }
+        const auto deadline = frame_window_->nextDeadline();
+        if (!deadline.has_value()) {
+          continue;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now < *deadline) {
+          pending_queue_cv_.wait_until(lock, *deadline);
+          continue;
+        }
+        auto ready = frame_window_->takeReady(now);
+        if (ready.has_value()) {
+          batch = std::move(*ready);
+          break;
+        }
+      }
+      if (stop_processing_) {
+        return;
+      }
+    }
+
+    for (const auto & frame : batch) {
+      processCameraArmorPoseSets(frame.from_front_0, frame.msg);
+    }
+  }
+}
+
+void AimOutpostPredictorNode::processCameraArmorPoseSets(
+  bool from_front_0,
+  const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg)
+{
+  if (!msg) {
+    return;
+  }
+
+  const rclcpp::Time stamp(msg->header.stamp);
+  if (last_processed_stamp_.has_value() && stamp < *last_processed_stamp_) {
+    const double late_ms = (*last_processed_stamp_ - stamp).seconds() * 1000.0;
+    ++late_frames_;
+    max_late_ms_ = std::max(max_late_ms_, late_ms);
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "outpost predictor dropped late frame source=%s late_ms=%.3f count=%llu max_ms=%.3f",
+      from_front_0 ? "front_0" : "front_1", late_ms,
+      static_cast<unsigned long long>(late_frames_), max_late_ms_);
+    return;
+  }
+  last_processed_stamp_ = stamp;
+
   std::lock_guard<std::mutex> lock(tracker_mutex_);
   std::vector<ArmorMeasurement> measurements = extractMeasurements(msg);
 
+  const auto now = std::chrono::steady_clock::now();
   if (from_front_0) {
     if (!front_camera_arbitrator_.shouldProcessFront0(!measurements.empty(), now)) {
       return;

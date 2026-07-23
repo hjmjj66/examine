@@ -4,13 +4,17 @@
 
 #include <array>
 #include <chrono>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <geometry_msgs/msg/pose.hpp>
@@ -20,6 +24,7 @@
 #include <tf2_ros/transform_listener.h>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include "aim_outpost_predictor/camera_frame_window.hpp"
 #include "aim_msgs/msg/armor_pose_set_array.hpp"
 #include "aim_msgs/msg/outpost_state.hpp"
 #include "aim_outpost_predictor/front_camera_arbitrator.hpp"
@@ -31,6 +36,7 @@ class AimOutpostPredictorNode : public rclcpp::Node
 {
 public:
   explicit AimOutpostPredictorNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  ~AimOutpostPredictorNode() override;
 
 private:
   class ExtendedKalmanFilter
@@ -71,6 +77,15 @@ private:
     Eigen::Vector3d xyz{Eigen::Vector3d::Zero()};
     Eigen::Vector3d ypr{Eigen::Vector3d::Zero()};
     Eigen::Vector3d ypd{Eigen::Vector3d::Zero()};
+  };
+
+  struct PendingFrame
+  {
+    bool from_front_0{true};
+    aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg;
+    rclcpp::Time stamp{0, 0, RCL_ROS_TIME};
+    std::uint64_t arrival_sequence{0};
+    std::chrono::steady_clock::time_point arrival_time{};
   };
 
   struct TrackerConfig
@@ -166,6 +181,13 @@ private:
   void onArmorPoseSets(
     bool from_front_0,
     const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
+  void enqueueArmorPoseSets(
+    bool from_front_0,
+    const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
+  void processingLoop();
+  void processCameraArmorPoseSets(
+    bool from_front_0,
+    const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr msg);
   std::vector<ArmorMeasurement> extractMeasurements(
     const aim_msgs::msg::ArmorPoseSetArray::ConstSharedPtr & msg);
   void processArmorPoseSets(
@@ -211,7 +233,19 @@ private:
   TrackerConfig tracker_config_;
   OutpostTracker tracker_;
   FrontCameraArbitrator front_camera_arbitrator_;
+  std::unique_ptr<CameraFrameWindow<PendingFrame>> frame_window_;
+  std::mutex pending_queue_mutex_;
+  std::condition_variable pending_queue_cv_;
+  std::thread processing_thread_;
+  bool stop_processing_{false};
+  std::uint64_t next_arrival_sequence_{0};
+  std::uint64_t dropped_pending_frames_{0};
+  std::uint64_t late_frames_{0};
+  double max_late_ms_{0.0};
   std::mutex tracker_mutex_;
+  std::optional<rclcpp::Time> last_processed_stamp_;
+  double time_window_sec_{0.001};
+  std::size_t pending_queue_capacity_{16};
   int consecutive_detection_count_{0};
   int last_marker_count_{0};
   int last_selected_marker_count_{0};

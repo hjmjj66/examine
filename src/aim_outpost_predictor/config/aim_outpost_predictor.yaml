@@ -37,3 +37,5 @@ aim_outpost_predictor_node:
     max_pair_cost: 18.0 # 允许的最大匹配代价
     fast_reanchor_cost: 8.0 # 快速重新锚定的代价阈值
     fast_reanchor_frames: 2 # 触发快速重新锚定所需帧数
+    time_window_sec: 0.001
+    pending_queue_capacity: 16

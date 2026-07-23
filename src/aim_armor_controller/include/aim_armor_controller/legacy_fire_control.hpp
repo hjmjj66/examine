@@ -41,6 +41,7 @@ inline LegacyFireControlOutput evaluateLegacyFireControl(
   output.shoot_flag = output.gimbal_ready;
 
   if (!input.spin_center_aim) {
+    state.armor_fired_in_face_window.fill(false);
     return output;
   }
 
@@ -50,7 +51,12 @@ inline LegacyFireControlOutput evaluateLegacyFireControl(
   }
 
   output.shoot_flag = false;
-  if (!output.gimbal_ready || !input.inside_face_window) {
+  if (!input.inside_face_window) {
+    state.armor_fired_in_face_window.fill(false);
+    return output;
+  }
+
+  if (!output.gimbal_ready) {
     return output;
   }
 
