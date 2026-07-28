@@ -41,5 +41,5 @@ aim_predictor_node:
     back_measurement_noise_pitch_variance_scale: 1.0 # 后相机俯仰测量方差缩放
     back_measurement_noise_distance_variance_scale: 1.0 # 后相机距离测量方差缩放
     back_measurement_noise_armor_yaw_variance_scale: 1.0 # 后相机装甲板偏航方差缩放
-    time_window_sec: 0.001
+    time_window_sec: 0.01
     pending_queue_capacity: 16

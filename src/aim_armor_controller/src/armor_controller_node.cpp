@@ -1502,11 +1502,17 @@ private:
     }
 
     const bool fire_allowed = aim.candidate.fire_allowed;
-    const bool outpost_facing_allowed =
-      !active_target.is_outpost ||
-      aim_armor_controller::allowOutpostFireByFacingGate(
-      aim.predicted_target.center.x, aim.predicted_target.center.y,
-      aim.candidate.armor_yaw_world, outpost_shoot_yaw_gate_rad_);
+    double outpost_facing_error_deg = 0.0;
+    bool outpost_facing_allowed = true;
+    if (active_target.is_outpost) {
+      const double outpost_facing_error_rad = aim_armor_controller::outpostArmorFacingError(
+        aim.predicted_target.center.x, aim.predicted_target.center.y,
+        aim.candidate.armor_yaw_world);
+      outpost_facing_error_deg = outpost_facing_error_rad * 180.0 / kPi;
+      outpost_facing_allowed =
+        outpost_shoot_yaw_gate_rad_ <= 0.0 ||
+        std::abs(outpost_facing_error_rad) <= outpost_shoot_yaw_gate_rad_;
+    }
 
     bool fire_this_tick = false;
     if (
@@ -1519,6 +1525,26 @@ private:
         last_fire_time_ = now();
         fire_this_tick = true;
       }
+    }
+    if (!fire_this_tick) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "fire gate blocked: mode=mpc manual=%s tracking_hold=%s candidate_fire=%s "
+        "outpost_facing=%s plan_fire=%s fire_rate_hz=%.3f fire_error=%.6f "
+        "fire_thresh=%.6f outpost_facing_error_deg=%.3f "
+        "outpost_gate_deg=%.3f selected_armor=%d is_outpost=%s",
+        manual_fire_mode_ ? "true" : "false",
+        active_target.tracking_hold ? "true" : "false",
+        fire_allowed ? "true" : "false",
+        outpost_facing_allowed ? "true" : "false",
+        plan.fire ? "true" : "false",
+        fire_rate_hz_,
+        plan.fire_error,
+        mpc_config_.fire_threshold,
+        outpost_facing_error_deg,
+        outpost_shoot_yaw_gate_rad_ * 180.0 / kPi,
+        aim.candidate.armor_index,
+        active_target.is_outpost ? "true" : "false");
     }
 
     fire_code_state_.aim_mode = true;
@@ -1746,6 +1772,26 @@ private:
         last_fire_time_ = now();
         fire_this_tick = true;
       }
+    }
+    if (!fire_this_tick) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "fire gate blocked: mode=legacy manual=%s tracking_hold=%s shoot_flag=%s "
+        "gimbal_ready=%s yaw_error_deg=%.3f pitch_error_deg=%.3f "
+        "yaw_tol_deg=%.3f pitch_tol_deg=%.3f inside_face_window=%s "
+        "fire_rate_hz=%.3f selected_armor=%d is_outpost=%s",
+        manual_fire_mode_ ? "true" : "false",
+        active_target.tracking_hold ? "true" : "false",
+        fire_control_output.shoot_flag ? "true" : "false",
+        fire_control_output.gimbal_ready ? "true" : "false",
+        yaw_error_deg,
+        pitch_error_deg,
+        shoot_yaw_tolerance_deg_,
+        shoot_pitch_tolerance_deg_,
+        inside_face_window ? "true" : "false",
+        fire_rate_hz_,
+        selected.armor_index,
+        active_target.is_outpost ? "true" : "false");
     }
 
     sentry_msgs::msg::AimResult aim_msg;

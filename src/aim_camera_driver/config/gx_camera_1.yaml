@@ -7,7 +7,7 @@ gx_camera_node:
     camera_info_topic: "/gx_camera_1/camera_info" # 相机内参话题
     publish_rate: 200.0 # 图像发布频率（Hz）
     # GX device exposure timestamp -> ROS time mapping.
-    use_device_timestamp: true # 是否使用相机设备时间戳
+    use_device_timestamp: false # 设备不支持 timestamp latch，使用主机接收时间
     timestamp_offset_sec: 0.0 # 设备时间戳的固定偏移（秒）
     # Leave at 0.0: if the SDK does not expose the frequency, the driver
     # estimates it from two timestamp latch samples.
@@ -36,13 +36,13 @@ gx_camera_node:
     auto_balance_mode: "once" # 自动白平衡：once/continuous/off
 # 自动白平衡模式可选 once、continuous、off。
 
-    camera_fx: 1543.5313225509 # X 方向焦距
-    camera_fy: 1543.6532647271 # Y 方向焦距
-    camera_cx: 605.3761892974 # 主点 X 坐标
-    camera_cy: 492.7908483571 # 主点 Y 坐标
+    camera_fx: 1540.4788627878 # X 方向焦距
+    camera_fy: 1540.8079595135 # Y 方向焦距
+    camera_cx: 618.1465079445 # 主点 X 坐标
+    camera_cy: 502.0792211000 # 主点 Y 坐标
 
-    dist_k1: -0.2065504948 # 径向畸变 k1
-    dist_k2: 0.1520899445 # 径向畸变 k2
-    dist_p1: 0.0002382891 # 切向畸变 p1
-    dist_p2: 0.0006906806 # 切向畸变 p2
-    dist_k3: 0.0535836285 # 径向畸变 k3
+    dist_k1: -0.2064341559 # 径向畸变 k1
+    dist_k2: 0.1641408860 # 径向畸变 k2
+    dist_p1: 0.0003104469 # 切向畸变 p1
+    dist_p2: 0.0006853768 # 切向畸变 p2
+    dist_k3: -0.0626345390 # 径向畸变 k3

@@ -20,7 +20,7 @@ inline double limitRad(double angle)
 
 inline double outpostArmorFacingError(double center_x, double center_y, double armor_yaw)
 {
-  const double gun_angle = std::atan2(-center_y, -center_x);
+  const double gun_angle = std::atan2(center_y, center_x);
   return limitRad(armor_yaw - gun_angle);
 }
 

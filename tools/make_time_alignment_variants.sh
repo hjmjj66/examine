@@ -10,21 +10,19 @@ mkdir -p "${OUT_DIR}"
 
 make_variant() {
   local name="$1"
-  local offset="$2"
-  local adaptive="$3"
+  local front_offset="$2"
+  local front_1_offset="$3"
+  local back_offset="$4"
   local output="${OUT_DIR}/${name}.yaml"
 
   cp "${SOURCE_CONFIG}" "${output}"
-  sed -i \
-    -e "s/^    tf_timestamp_offset_sec: .*/    tf_timestamp_offset_sec: ${offset} # generated variant/" \
-    -e "s/^    enable_time_alignment_estimator: .*/    enable_time_alignment_estimator: ${adaptive}/" \
-    "${output}"
+  sed -i     -e "s/^    front_tf_timestamp_offset_sec: .*/    front_tf_timestamp_offset_sec: ${front_offset} # generated variant/"     -e "s/^    front_1_tf_timestamp_offset_sec: .*/    front_1_tf_timestamp_offset_sec: ${front_1_offset} # generated variant/"     -e "s/^    back_tf_timestamp_offset_sec: .*/    back_tf_timestamp_offset_sec: ${back_offset} # generated variant/"     "${output}"
   printf '%s\n' "${output}"
 }
 
-make_variant fixed_zero 0.0 false
-make_variant fixed_minus_20ms -0.020 false
-make_variant fixed_minus_25ms -0.025 false
-make_variant fixed_minus_30ms -0.030 false
-make_variant fixed_minus_35ms -0.035 false
-make_variant adaptive_minus_25ms_seed -0.025 true
+make_variant fixed_default -0.024 -0.026 -0.024
+make_variant fixed_zero 0.0 0.0 0.0
+make_variant fixed_minus_20ms -0.020 -0.020 -0.020
+make_variant fixed_minus_25ms -0.025 -0.025 -0.025
+make_variant fixed_minus_30ms -0.030 -0.030 -0.030
+make_variant fixed_minus_35ms -0.035 -0.035 -0.035

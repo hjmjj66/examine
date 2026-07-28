@@ -41,7 +41,6 @@ AimArmorDetectorNode::AimArmorDetectorNode(const rclcpp::NodeOptions & options)
 
   declare_parameter<std::string>("model_path", "");
   declare_parameter<std::string>("device_name", "CPU");
-  declare_parameter<int>("enemy_color", -2);
   declare_parameter<bool>("enable_visualization", false);
   declare_parameter<bool>("enable_pca_correction", true);
   declare_parameter<int>("pca.pass_optimize_lightbar_width", 3);
@@ -53,7 +52,15 @@ AimArmorDetectorNode::AimArmorDetectorNode(const rclcpp::NodeOptions & options)
   declare_parameter<double>("pca.estimated_width_ratio", 0.18);
   declare_parameter<int>("pca.min_sample_width", 5);
 
-  enemy_color_ = get_parameter("enemy_color").as_int();
+  team_color_sub_ = create_subscription<std_msgs::msg::Bool>(
+    "/ly/friend/is_team_red",
+    rclcpp::QoS(10),
+    [this](const std_msgs::msg::Bool::ConstSharedPtr msg) {
+      if (!msg) {
+        return;
+      }
+      detect_color_.store(detectColorForTeam(msg->data));
+    });
   enable_visualization_ = get_parameter("enable_visualization").as_bool();
   enable_pca_correction_ = get_parameter("enable_pca_correction").as_bool();
 
@@ -189,6 +196,10 @@ void AimArmorDetectorNode::processLoop(CameraPipeline & pipeline)
       break;
     }
 
+    if (detect_color_.load() == kUnknownDetectColor) {
+      continue;
+    }
+
     if (slot_active[next_submit_slot]) {
       const auto detections =
         pipeline.infer->getResult(
@@ -197,7 +208,7 @@ void AimArmorDetectorNode::processLoop(CameraPipeline & pipeline)
               static_cast<int>(in_flight_msgs[next_submit_slot]->width),
               static_cast<int>(in_flight_msgs[next_submit_slot]->height)) :
             cv::Size(),
-          enemy_color_,
+          detect_color_.load(),
           next_submit_slot);
       publishDetections(pipeline, in_flight_msgs[next_submit_slot], detections);
       in_flight_msgs[next_submit_slot].reset();
@@ -217,7 +228,7 @@ void AimArmorDetectorNode::processLoop(CameraPipeline & pipeline)
       cv::Size(
         static_cast<int>(in_flight_msgs[slot]->width),
         static_cast<int>(in_flight_msgs[slot]->height)),
-      enemy_color_,
+      detect_color_.load(),
       slot);
     publishDetections(pipeline, in_flight_msgs[slot], detections);
     in_flight_msgs[slot].reset();

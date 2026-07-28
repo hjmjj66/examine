@@ -50,7 +50,6 @@ TOPIC_LIST=(
   /aim_predictor/front_1/target_states
   /aim_predictor/back/target_states
   /aim_outpost_predictor/outpost_state
-  /aim_solver/time_alignment_status
   /gx_camera_0/timestamp_status
   /aim_detector/front_0/armor_sets
   /gx_camera_0/image_raw

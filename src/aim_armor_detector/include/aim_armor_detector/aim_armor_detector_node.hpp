@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <array>
 #include <chrono>
 #include <condition_variable>
@@ -13,7 +14,9 @@
 #include <opencv2/opencv.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <std_msgs/msg/bool.hpp>
 
+#include "aim_armor_detector/team_color.hpp"
 #include "aim_armor_detector/openvino_infer.hpp"
 #include "aim_msgs/msg/armor_set_array.hpp"
 
@@ -80,9 +83,11 @@ private:
     bool & slot_active);
   bool takeLatestFrame(CameraPipeline & pipeline, sensor_msgs::msg::Image::ConstSharedPtr & msg);
 
-  int enemy_color_{-2};
+  std::atomic<int> detect_color_{kUnknownDetectColor};
   bool enable_visualization_{false};
   bool enable_pca_correction_{true};
+
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr team_color_sub_;
 
   CameraPipeline front_pipeline_;
   CameraPipeline back_pipeline_;

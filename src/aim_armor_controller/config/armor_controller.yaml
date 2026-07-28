@@ -15,14 +15,14 @@ armor_controller_node:
     selected_armor_topic: /controller/selected_armor # 当前选中装甲板输出
     debug_target_point_topic: /armor_controller/debug/target_point_barrel # 枪管系目标点调试输出
     debug_selected_armor_index_topic: /armor_controller/debug/selected_armor_index # 选板索引调试输出
-    publish_legacy_control_topics: true # 是否发布兼容控制话题
+    publish_legacy_control_topics: false # 是否发布兼容控制话题
     publish_control_trajectory: false # 是否直接发布 MPC 六量轨迹控制云台
     publish_control_angles: false # 是否发布兼容角度控制话题
     # 手动开火模式：true 时不发布 /ly/control/firecode，交由外部手动控制开火
-    manual_fire_mode: true # 是否禁止控制器发布开火码并交由外部手动开火
+    manual_fire_mode: true # 是否禁止控制器发布开火码并交由外部手动开火#######################################
     publish_rate_hz: 100.0 # 控制循环频率（Hz）
     # 最大弹频（Hz），即每秒最多翻转几次 firecode
-    fire_rate_hz: 2.0 # 开火码翻转频率上限（Hz）
+    fire_rate_hz: 15.0 # 开火码翻转频率上限（Hz）
     bullet_speed_mps: 23.0 # 无实时弹速时使用的默认弹速（m/s）
     min_bullet_speed_mps: 20.0 # 允许使用的最小弹速（m/s）
     fallback_bullet_speed_mps: 23.0 # 实时弹速低于阈值时 MPC 使用的回退弹速（m/s）
@@ -49,7 +49,7 @@ armor_controller_node:
     armor_select_angle_weight: 0.0 # 选板瞄准角误差权重（当前控制器未使用）
     include_processing_delay: true # 预测时间是否计入消息处理延迟
     system_response_time_sec: 0.0 # 云台与发射系统响应延迟（秒）
-    outpost_extra_prediction_time_sec: 0.0 # 前哨站额外预测时间（秒）
+    outpost_extra_prediction_time_sec: 0.08 # 前哨站额外预测时间（秒）
     max_prediction_iterations: 10 # 预测与飞行时间耦合迭代上限
     fly_time_converge_threshold_sec: 0.001 # 飞行时间迭代收敛阈值（秒）
     max_processing_delay_sec: 0.3 # 计入预测的最大处理延迟（秒）
@@ -84,7 +84,7 @@ armor_controller_node:
     world_frame_id: gimbal_world # MPC 使用的世界坐标系
     use_current_time_for_tf: false # 是否忽略目标时间戳并使用最新 TF
     yaw_offset_deg: 0.0 # MPC 输出的偏航固定补偿（度）
-    pitch_offset_deg: -1.2 # MPC 输出的俯仰固定补偿（度）
+    pitch_offset_deg: 0.0 #低矮的靶车为-1.2,前哨为-0.9 # MPC 输出的俯仰固定补偿（度）
     gimbal_state_history_sec: 2.0 # 保存云台历史状态的时长（秒）
     mpc_dt: 0.01 # MPC 离散时间步长（秒）
     mpc_horizon: 100 # MPC 预测步数

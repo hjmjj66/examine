@@ -37,6 +37,7 @@ struct MpcPlan
 {
   bool valid{false};
   bool fire{false};
+  double fire_error{0.0};
   double yaw{0.0};
   double yaw_velocity{0.0};
   double yaw_acceleration{0.0};

@@ -129,11 +129,10 @@ MpcPlan MpcPlanner::solve(const MpcReference & reference)
 
   MpcPlan plan;
   plan.valid = true;
-  plan.fire =
-    std::hypot(
-      reference.yaw(0, fire_index) - yaw_solver_->solver->work->x(0, fire_index),
-      reference.pitch(0, fire_index) - pitch_solver_->solver->work->x(0, fire_index)) <
-    fire_threshold_;
+  plan.fire_error = std::hypot(
+    reference.yaw(0, fire_index) - yaw_solver_->solver->work->x(0, fire_index),
+    reference.pitch(0, fire_index) - pitch_solver_->solver->work->x(0, fire_index));
+  plan.fire = plan.fire_error < fire_threshold_;
   plan.yaw = yaw_solver_->solver->work->x(0, axis_index);
   plan.yaw_velocity = yaw_solver_->solver->work->x(1, axis_index);
   plan.yaw_acceleration = yaw_solver_->solver->work->u(0, axis_index);

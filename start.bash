@@ -3,14 +3,12 @@
 # sentry.aim 一键启动脚本
 #
 # 用法:
-#   在 sentry.aim 目录下执行:
-#   source install/setup.bash && bash start.bash
-#   或者直接:
+#   在任意目录下直接执行:
 #   bash start.bash
 #
 # 停止: 按 Ctrl+C
 # =============================================================================
-
+source /opt/ros/humble/setup.bash && source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && source install/setup.bash
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,6 +16,24 @@ WORKSPACE_ROOT="${SCRIPT_DIR}"
 SETUP_FILE="${WORKSPACE_ROOT}/install/setup.bash"
 GIMBAL_SETUP_FILE="/home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash"
 PIDS=()
+
+if [ ! -f "${GIMBAL_SETUP_FILE}" ]; then
+    echo "[ERROR] Missing ${GIMBAL_SETUP_FILE}"
+    echo "       sentry_tf depends on gimbal_driver custom messages; build ros2_ly_ws_sentry first"
+    exit 1
+fi
+
+source /opt/ros/humble/setup.bash
+source "${GIMBAL_SETUP_FILE}"
+cd "${WORKSPACE_ROOT}"
+#colcon build --symlink-install --base-paths src
+
+if [ ! -f "${SETUP_FILE}" ]; then
+    echo "[错误] 找不到 ${SETUP_FILE}"
+    exit 1
+fi
+
+source "${SETUP_FILE}"
 
 echo "======================================================================"
 echo "  sentry.aim 自瞄系统启动"
@@ -29,21 +45,6 @@ if [[ -n "${AIM_SOLVER_CONFIG:-}" ]]; then
     SOLVER_LAUNCH+=("config_file:=${AIM_SOLVER_CONFIG}")
     echo "  Solver 配置覆盖: ${AIM_SOLVER_CONFIG}"
 fi
-
-if [ ! -f "${SETUP_FILE}" ]; then
-    echo "[错误] 找不到 ${SETUP_FILE}"
-    echo "       请先在 ROS 2 环境中完成 sentry.aim 的构建"
-    exit 1
-fi
-
-if [ ! -f "${GIMBAL_SETUP_FILE}" ]; then
-    echo "[ERROR] Missing ${GIMBAL_SETUP_FILE}"
-    echo "       sentry_tf depends on gimbal_driver custom messages; build ros2_ly_ws_sentry first"
-    exit 1
-fi
-
-source "${GIMBAL_SETUP_FILE}"
-source "${SETUP_FILE}"
 
 cleanup() {
     echo ""
@@ -88,7 +89,7 @@ echo ""
 echo "--- ② 三相机检测链路 ---"
 launch_bg "front camera #0 detector" ros2 launch aim_armor_detector front_camera_0_detector.launch.py
 launch_bg "front camera #1 detector" ros2 launch aim_armor_detector front_camera_1_detector.launch.py
-launch_bg "back camera detector" ros2 launch aim_armor_detector back_camera_detector.launch.py
+# launch_bg "back camera detector" ros2 launch aim_armor_detector back_camera_detector.launch.py
 sleep 1
 check_processes
 

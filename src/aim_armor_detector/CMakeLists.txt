@@ -79,6 +79,15 @@ install(DIRECTORY config
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_team_color
+    test/test_team_color.cpp
+  )
+  if(TARGET test_team_color)
+    target_include_directories(test_team_color PRIVATE include)
+  endif()
+
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)

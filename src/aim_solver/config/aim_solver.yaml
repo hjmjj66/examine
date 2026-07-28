@@ -6,11 +6,11 @@
     front_camera_info_topic: "/gx_camera_0/camera_info" # 前相机 0 运行时内参输入
     front_visualization_topic: "/aim_solver/front_0/visualization" # 前相机 0 可视化输出
     front_use_camera_info_topic: false # 是否用 CameraInfo 覆盖下方标定内参
-    front_camera_matrix: [2594.8668197346, 0.0, 623.6194463792, # 3x3 相机内参矩阵，按行存储
-                          0.0, 2593.9303479068, 487.9543574800,
+    front_camera_matrix: [2545.3923687766, 0.0, 624.3889750486, # 3x3 相机内参矩阵，按行存储
+                          0.0, 2545.6949582141, 499.7431098183,
                           0.0, 0.0, 1.0]
-    front_distortion_coefficients: [0.0013295332, -0.3225360920, 0.0008215090, # 畸变系数 [k1,k2,p1,p2,k3]
-                                   0.0001941072, 7.0936030151]
+    front_distortion_coefficients: [-0.0255345050, 0.2932230829, 0.0010486782, # 畸变系数 [k1,k2,p1,p2,k3]
+                                   0.0007531860, 0.1904016229]
 
     # ---------- 前相机 #1(大恒工业相机) ----------
     front_1_armor_set_topic: "/aim_detector/front_1/armor_sets" # 前相机 1 装甲板检测输入
@@ -18,11 +18,11 @@
     front_1_camera_info_topic: "/gx_camera_1/camera_info" # 前相机 1 运行时内参输入
     front_1_visualization_topic: "/aim_solver/front_1/visualization" # 前相机 1 可视化输出
     front_1_use_camera_info_topic: false # 是否用 CameraInfo 覆盖下方标定内参
-    front_1_camera_matrix: [1543.5313225509, 0.0, 605.3761892974, # 3x3 相机内参矩阵，按行存储
-                            0.0, 1543.6532647271, 492.7908483571,
+    front_1_camera_matrix: [1540.4788627878, 0.0, 618.1465079445, # 3x3 相机内参矩阵，按行存储
+                            0.0, 1540.8079595135, 502.0792211000,
                             0.0, 0.0, 1.0]
-    front_1_distortion_coefficients: [-0.2065504948, 0.1520899445, 0.0002382891, # 畸变系数 [k1,k2,p1,p2,k3]
-                                      0.0006906806, 0.0535836285]
+    front_1_distortion_coefficients: [-0.2064341559, 0.1641408860, 0.0003104469, # 畸变系数 [k1,k2,p1,p2,k3]
+                                      0.0006853768, -0.0626345390]
 
     # ---------- 后相机(USB摄像头) ----------
     back_armor_set_topic: "/aim_detector/back/armor_sets" # 后相机装甲板检测输入
@@ -39,29 +39,11 @@
     # ---------- 共享参数 ----------
     target_frame: "gimbal_world" # 解算位姿转换并输出到的目标坐标系
     tf_lookup_timeout_sec: 0.05 # 查询目标坐标系 TF 的最长等待时间（秒）
-    tf_timestamp_offset_sec: -0.025 # 自适应估计关闭时的固定后备偏移（秒）；固定靶录包离线扫描约 -25ms
+    front_tf_timestamp_offset_sec: -0.024 # camera0 fixed TF offset in seconds
+    front_1_tf_timestamp_offset_sec: -0.026 # camera1 fixed TF offset in seconds
+    back_tf_timestamp_offset_sec: -0.024 # back camera fixed TF offset in seconds
     use_current_time_for_tf: false # true 时查询最新 TF，忽略图像时间戳与上述偏移
-    # 图像/TF 时间偏移独立于目标 EKF；仅对 time_alignment_camera 指定流水线的当前目标 ID 更新。
-    enable_time_alignment_estimator: false # 是否启用图像与 TF 的自适应时间对齐
-    time_alignment_status_topic: "/aim_solver/time_alignment_status" # 时间对齐状态输出话题
-    selected_target_id_topic: "/decider/selected_target_id" # 当前选中目标 ID 输入话题
-    time_alignment_camera: "front" # 启用时间对齐的相机流水线名称
-    time_alignment_target_id: 6 # 时间对齐初始目标 ID；收到选目标消息后跟随当前选中目标
-    time_alignment_initial_offset_sec: -0.025 # 时间对齐初始偏移（秒）
-    time_alignment_min_offset_sec: -0.6 # 允许的最小时间偏移（秒）
-    time_alignment_max_offset_sec: 0.2 # 允许的最大时间偏移（秒）
-    time_alignment_search_step_sec: 0.002 # 时间偏移搜索步长（秒）
-    time_alignment_window_size: 24 # 时间对齐滑动窗口样本数
-    time_alignment_min_samples: 8 # 开始估计所需的最少样本数
-    time_alignment_min_motion_rad: 0.03 # 有效估计所需的最小运动量（弧度）
-    time_alignment_min_score_improvement_rad2: 0.00001 # 接受新偏移所需的最小评分改善
-    time_alignment_update_period_sec: 0.10 # 时间对齐更新周期（秒）
-    time_alignment_process_noise_offset: 0.00001 # 偏移状态过程噪声
-    time_alignment_process_noise_drift: 0.00001 # 偏移漂移过程噪声
-    time_alignment_measurement_noise: 0.000025 # 时间对齐测量噪声
-    time_alignment_max_offset_step_sec: 0.03 # 单次允许的最大偏移变化（秒）
-    time_alignment_min_offset_drift_sec_per_sec: -0.05 # 偏移漂移最小速率（秒/秒）
-    time_alignment_max_offset_drift_sec_per_sec: 0.05 # 偏移漂移最大速率（秒/秒）
+    # 图像/TF 自适应对齐仅用于静态参考目标标定，绝不再跟随当前交战目标切换。
     enable_visualization: true # 是否发布装甲板位姿 Marker 可视化
     use_generic_mode: false # 是否使用 solvePnPGeneric 生成并筛选多个 PnP 解
     project_error_ratio_thres: 3.0 # 两个 PnP 解重投影误差比超过此值时丢弃结果

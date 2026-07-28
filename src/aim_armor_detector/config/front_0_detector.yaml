@@ -16,8 +16,7 @@
     # ---------- 模型与推理参数 ----------
     model_path: "/home/hustlyrm/sentry.aim/assets/0526_fp16.xml" # 模型文件路径
     device_name: "GPU" # 推理设备
-    enemy_color: 0 # 敌方颜色：-2=双方，0=蓝方，1=红方
-    enable_visualization: false # 是否发布可视化图像
+    enable_visualization: true # 是否发布可视化图像
     enable_pca_correction: true # 是否启用 PCA 灯条校正
     pca.pass_optimize_lightbar_width: 5 # PCA 校正通过的灯条宽度阈值
     pca.normalize_max_brightness: 25.0 # 亮度归一化最大值

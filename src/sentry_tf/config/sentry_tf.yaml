@@ -11,27 +11,27 @@ sentry_tf_node:
     barrel_joint_frame: "gimbal_barrel_joint" # 俯仰关节坐标系
     barrel_frame: "gimbal_barrel" # 炮管坐标系
     # 俯仰轴（barrel_joint）相对 yaw 轴交点沿 +Z 的抬升量（米），由静态 TF 发布
-    barrel_offset_z: 0.320 # 偏航轴到俯仰轴的 Z 向偏移（米）
+    barrel_offset_z: 0.320 # 偏航轴到俯仰轴的 Z 向偏移（米）+
 
 # gimbal_barrel -> gx_camera_0 ?? TF????????
 barrel_to_camera_0:
-  x: 0.21932353 # 相对父坐标系平移 X（米）
-  y: 0.04072862 # 相对父坐标系平移 Y（米）
-  z: -0.00025174 # 相对父坐标系平移 Z（米）
-  yaw: -0.00603267 # 绕 Z 旋转（弧度）
-  pitch: -0.05759101 # 绕 Y 旋转（弧度）
-  roll: 0.03382602 # 绕 X 旋转（弧度）
+  x: 0.24761601 # 相对父坐标系平移 X（米）
+  y: 0.03107666 # 相对父坐标系平移 Y（米）
+  z: 0.00453894 # 相对父坐标系平移 Z（米）
+  yaw: -0.01983006 # 绕 Z 旋转（弧度）
+  pitch: -0.05272203 # 绕 Y 旋转（弧度）
+  roll: 0.03373018 # 绕 X 旋转（弧度）
   parent_frame: "gimbal_barrel" # 外参父坐标系
   child_frame: "gx_camera_0" # 外参子坐标系
 
 # gimbal_barrel -> gx_camera_1 静态 TF（相机标定结果）
 barrel_to_camera_1:
-  x: 0.16924172 # 平移 X（米）
-  y: -0.03997236 # 平移 Y（米）
-  z: 0.00414103 # 平移 Z（米）
-  yaw: 0.00857482 # 绕 Z 旋转（弧度）
-  pitch: -0.03424477 # 绕 Y 旋转（弧度）
-  roll: 0.00148875 # 绕 X 旋转（弧度）
+  x: 0.21127999 # 平移 X（米）
+  y: -0.04173290 # 平移 Y（米）
+  z: 0.00050966 # 平移 Z（米）
+  yaw: -0.01102148 # 绕 Z 旋转（弧度）
+  pitch: -0.01142671 # 绕 Y 旋转（弧度）
+  roll: -0.00998012 # 绕 X 旋转（弧度）
   parent_frame: "gimbal_barrel" # 外参父坐标系
   child_frame: "gx_camera_1" # 外参子坐标系
 
