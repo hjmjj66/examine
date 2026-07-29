@@ -6,8 +6,8 @@ armor_controller_node:
     outpost_state_topic: /aim_outpost_predictor/outpost_state # 前哨站状态输入
     selected_target_id_topic: /decider/selected_target_id # 决策模块选中的目标 ID
     aim_result_topic: /ly/aim/result # 瞄准结果输出
-    gimbal_angles_topic: /ly/gimbal/angles # 云台当前角度输入
     gimbal_state_topic: /ly/gimbal/state # 云台角度、角速度、角加速度反馈
+    gimbal_posture_topic: /ly/gimbal/posture # 云台姿态回读；4/5/6 时启用超频开火
     bullet_speed_topic: /ly/game/bullet # 实时弹速输入
     control_angles_topic: /ly/control/angles # 兼容控制角度输出
     control_trajectory_topic: /ly/control/trajectory # MPC 六量轨迹输出
@@ -15,14 +15,16 @@ armor_controller_node:
     selected_armor_topic: /controller/selected_armor # 当前选中装甲板输出
     debug_target_point_topic: /armor_controller/debug/target_point_barrel # 枪管系目标点调试输出
     debug_selected_armor_index_topic: /armor_controller/debug/selected_armor_index # 选板索引调试输出
+    debug_aim_geometry_log: false # 打印单帧瞄准几何诊断日志
     publish_legacy_control_topics: false # 是否发布兼容控制话题
     publish_control_trajectory: false # 是否直接发布 MPC 六量轨迹控制云台
     publish_control_angles: false # 是否发布兼容角度控制话题
     # 手动开火模式：true 时不发布 /ly/control/firecode，交由外部手动控制开火
-    manual_fire_mode: true # 是否禁止控制器发布开火码并交由外部手动开火#######################################
+    manual_fire_mode: false # 是否禁止控制器发布开火码并交由外部手动开火#######################################
     publish_rate_hz: 100.0 # 控制循环频率（Hz）
     # 最大弹频（Hz），即每秒最多翻转几次 firecode
     fire_rate_hz: 15.0 # 开火码翻转频率上限（Hz）
+    overclock_fire_rate_hz: 20.0 # 强化姿态（4/5/6）下的开火码翻转频率上限（Hz）
     bullet_speed_mps: 23.0 # 无实时弹速时使用的默认弹速（m/s）
     min_bullet_speed_mps: 20.0 # 允许使用的最小弹速（m/s）
     fallback_bullet_speed_mps: 23.0 # 实时弹速低于阈值时 MPC 使用的回退弹速（m/s）
@@ -32,6 +34,7 @@ armor_controller_node:
     tol_deltay_m: 0.05 # 弹道积分 Y 步长（当前控制器未使用）
     bullet_mass_kg: 0.0032 # 弹丸质量（kg）
     bullet_diameter_m: 0.0168 # 弹丸直径（m）
+    muzzle_offset_x_m: 0.0826 # 枪口出射点相对 pitch 轴原点沿枪管 +X 的距离（米）
     max_iter: 100 # 弹道解算最大迭代次数
     tol: 1.0e-6 # 弹道解算收敛阈值
     # 控制解算目标坐标系：在该系下解 yaw/pitch（建议为俯仰关节 gimbal_barrel_joint）
@@ -83,8 +86,8 @@ armor_controller_node:
     enable_mpc: true # 是否启用 MPC 控制器
     world_frame_id: gimbal_world # MPC 使用的世界坐标系
     use_current_time_for_tf: false # 是否忽略目标时间戳并使用最新 TF
-    yaw_offset_deg: 0.0 # MPC 输出的偏航固定补偿（度）
-    pitch_offset_deg: 0.0 #低矮的靶车为-1.2,前哨为-0.9 # MPC 输出的俯仰固定补偿（度）
+    yaw_offset_deg: 0.0 # MPC 输出的偏航固定补偿（度）0.8
+    pitch_offset_deg: -0.35 #低矮的靶车为-1.30,前哨为-0.9 # MPC 输出的俯仰固定补偿（度）
     gimbal_state_history_sec: 2.0 # 保存云台历史状态的时长（秒）
     mpc_dt: 0.01 # MPC 离散时间步长（秒）
     mpc_horizon: 100 # MPC 预测步数

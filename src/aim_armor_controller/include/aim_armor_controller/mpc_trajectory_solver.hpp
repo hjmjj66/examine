@@ -20,7 +20,8 @@ MpcTrajectorySolution solveMpcTrajectory(
   double target_x,
   double target_y,
   double target_z,
-  bool use_air_resistance = true);
+  bool use_air_resistance = true,
+  double muzzle_offset_x = 0.0);
 
 }  // namespace aim_armor_controller
 

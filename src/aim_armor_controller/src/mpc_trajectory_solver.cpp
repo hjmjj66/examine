@@ -18,15 +18,79 @@ constexpr double kBulletMass = 3.2e-3;
 constexpr double kBulletDiameter = 16.8e-3;
 constexpr int kMaxIterations = 100;
 constexpr double kTolerance = 1e-6;
+constexpr double kMinFlightDistance = 1e-6;
+constexpr double kPitchLimit = 1.4;
 
 MpcTrajectorySolution solveNoAirTrajectory(
   double bullet_speed,
   double target_x,
   double target_y,
-  double target_z)
+  double target_z,
+  double muzzle_offset_x)
 {
   MpcTrajectorySolution result;
   const double distance = std::hypot(target_x, target_y);
+  if (!std::isfinite(muzzle_offset_x)) {
+    result.failure_reason = "no_air_muzzle_offset_not_finite";
+    result.unsolvable = true;
+    return result;
+  }
+
+  if (std::abs(muzzle_offset_x) > 1e-9) {
+    if (distance < 1e-6) {
+      result.failure_reason = "no_air_distance_too_small";
+      result.unsolvable = true;
+      return result;
+    }
+
+    double pitch = std::atan2(target_z, std::max(distance, 1e-6));
+    for (int i = 0; i < kMaxIterations; ++i) {
+      const double cos_pitch = std::cos(pitch);
+      const double sin_pitch = std::sin(pitch);
+      if (std::abs(cos_pitch) < 1e-6) {
+        result.failure_reason = "no_air_pitch_cosine_too_small";
+        result.unsolvable = true;
+        return result;
+      }
+
+      const double flight_distance = distance - muzzle_offset_x * cos_pitch;
+      if (flight_distance <= kMinFlightDistance) {
+        result.failure_reason = "no_air_muzzle_flight_distance_non_positive";
+        result.unsolvable = true;
+        return result;
+      }
+
+      const double target_z_from_muzzle = target_z - muzzle_offset_x * sin_pitch;
+      const double fly_time = flight_distance / (bullet_speed * cos_pitch);
+      const double delta_z =
+        target_z_from_muzzle - bullet_speed * sin_pitch * fly_time +
+        0.5 * kNoAirGravity * fly_time * fly_time;
+      if (std::abs(delta_z) < kTolerance) {
+        result.yaw = std::atan2(target_y, target_x);
+        result.pitch = pitch;
+        result.fly_time = fly_time;
+        return result;
+      }
+
+      const double dt_dpitch =
+        distance * sin_pitch / (bullet_speed * cos_pitch * cos_pitch);
+      const double derivative =
+        -muzzle_offset_x * cos_pitch -
+        bullet_speed * (cos_pitch * fly_time + sin_pitch * dt_dpitch) +
+        kNoAirGravity * fly_time * dt_dpitch;
+      if (std::abs(derivative) < 1e-9 || !std::isfinite(derivative)) {
+        result.failure_reason = "no_air_newton_derivative_too_small";
+        result.unsolvable = true;
+        return result;
+      }
+      pitch = std::clamp(pitch - delta_z / derivative, -kPitchLimit, kPitchLimit);
+    }
+
+    result.failure_reason = "no_air_iteration_limit";
+    result.unsolvable = true;
+    return result;
+  }
+
   const double a = kNoAirGravity * distance * distance /
     (2.0 * bullet_speed * bullet_speed);
   const double b = -distance;
@@ -69,7 +133,8 @@ MpcTrajectorySolution solveMpcTrajectory(
   double target_x,
   double target_y,
   double target_z,
-  bool use_air_resistance)
+  bool use_air_resistance,
+  double muzzle_offset_x)
 {
   MpcTrajectorySolution result;
   if (bullet_speed <= 0.0) {
@@ -77,8 +142,13 @@ MpcTrajectorySolution solveMpcTrajectory(
     result.unsolvable = true;
     return result;
   }
+  if (!std::isfinite(muzzle_offset_x)) {
+    result.failure_reason = "muzzle_offset_not_finite";
+    result.unsolvable = true;
+    return result;
+  }
   if (!use_air_resistance) {
-    return solveNoAirTrajectory(bullet_speed, target_x, target_y, target_z);
+    return solveNoAirTrajectory(bullet_speed, target_x, target_y, target_z, muzzle_offset_x);
   }
 
   const double distance = std::hypot(target_x, target_y);
@@ -87,18 +157,70 @@ MpcTrajectorySolution solveMpcTrajectory(
     kDragCoefficient * kAirDensity * (kPi * kBulletDiameter * kBulletDiameter) /
     (8.0 * kBulletMass);
 
+  if (std::abs(muzzle_offset_x) <= 1e-9) {
+    for (int i = 0; i < kMaxIterations; ++i) {
+      const double cos_pitch = std::cos(pitch);
+      if (std::abs(cos_pitch) < 1e-6) {
+        result.failure_reason = "air_pitch_cosine_too_small";
+        result.unsolvable = true;
+        return result;
+      }
+
+      const double exp_term = std::exp(drag_factor * distance) - 1.0;
+      const double fly_time = exp_term / (drag_factor * bullet_speed * cos_pitch);
+      const double delta_z =
+        target_z - bullet_speed * std::sin(pitch) * fly_time +
+        0.5 * kGravity * fly_time * fly_time;
+
+      if (std::abs(delta_z) < kTolerance) {
+        result.yaw = std::atan2(target_y, target_x);
+        result.pitch = pitch;
+        result.fly_time = fly_time;
+        return result;
+      }
+
+      const double dt_dpitch =
+        exp_term * std::sin(pitch) /
+        (drag_factor * bullet_speed * cos_pitch * cos_pitch);
+      const double derivative =
+        -bullet_speed * (cos_pitch * fly_time + std::sin(pitch) * dt_dpitch) +
+        kGravity * fly_time * dt_dpitch;
+      if (std::abs(derivative) < 1e-9) {
+        result.failure_reason = "air_newton_derivative_too_small";
+        break;
+      }
+      pitch -= delta_z / derivative;
+    }
+
+    if (result.failure_reason.empty()) {
+      result.failure_reason = "air_iteration_limit";
+    }
+    result.unsolvable = true;
+    return result;
+  }
+
   for (int i = 0; i < kMaxIterations; ++i) {
     const double cos_pitch = std::cos(pitch);
+    const double sin_pitch = std::sin(pitch);
     if (std::abs(cos_pitch) < 1e-6) {
       result.failure_reason = "air_pitch_cosine_too_small";
       result.unsolvable = true;
       return result;
     }
 
-    const double exp_term = std::exp(drag_factor * distance) - 1.0;
+    const double flight_distance = distance - muzzle_offset_x * cos_pitch;
+    if (flight_distance <= kMinFlightDistance) {
+      result.failure_reason = "air_muzzle_flight_distance_non_positive";
+      result.unsolvable = true;
+      return result;
+    }
+
+    const double target_z_from_muzzle = target_z - muzzle_offset_x * sin_pitch;
+    const double exp_distance = std::exp(drag_factor * flight_distance);
+    const double exp_term = exp_distance - 1.0;
     const double fly_time = exp_term / (drag_factor * bullet_speed * cos_pitch);
     const double delta_z =
-      target_z - bullet_speed * std::sin(pitch) * fly_time +
+      target_z_from_muzzle - bullet_speed * sin_pitch * fly_time +
       0.5 * kGravity * fly_time * fly_time;
 
     if (std::abs(delta_z) < kTolerance) {
@@ -109,16 +231,17 @@ MpcTrajectorySolution solveMpcTrajectory(
     }
 
     const double dt_dpitch =
-      exp_term * std::sin(pitch) /
+      (exp_distance * muzzle_offset_x * sin_pitch * cos_pitch + exp_term * sin_pitch) /
       (drag_factor * bullet_speed * cos_pitch * cos_pitch);
     const double derivative =
-      -bullet_speed * (cos_pitch * fly_time + std::sin(pitch) * dt_dpitch) +
+      -muzzle_offset_x * cos_pitch -
+      bullet_speed * (cos_pitch * fly_time + sin_pitch * dt_dpitch) +
       kGravity * fly_time * dt_dpitch;
-    if (std::abs(derivative) < 1e-9) {
+    if (std::abs(derivative) < 1e-9 || !std::isfinite(derivative)) {
       result.failure_reason = "air_newton_derivative_too_small";
       break;
     }
-    pitch -= delta_z / derivative;
+    pitch = std::clamp(pitch - delta_z / derivative, -kPitchLimit, kPitchLimit);
   }
 
   if (result.failure_reason.empty()) {

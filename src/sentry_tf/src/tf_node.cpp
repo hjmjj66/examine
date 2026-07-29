@@ -8,7 +8,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
-#include "gimbal_driver/msg/gimbal_angles.hpp"
+#include "gimbal_driver/msg/gimbal_state.hpp"
 
 namespace
 {
@@ -19,7 +19,7 @@ public:
   SentryTfNode()
   : Node("sentry_tf_node")
   {
-    declare_parameter<std::string>("gimbal_topic", "/ly/gimbal/angles");
+    declare_parameter<std::string>("gimbal_state_topic", "/ly/gimbal/state");
     declare_parameter<std::string>("base_frame", "base_link");
     declare_parameter<std::string>("world_frame", "gimbal_world");
     declare_parameter<std::string>("yaw_frame", "gimbal_small_yaw");
@@ -33,24 +33,29 @@ public:
     barrel_joint_frame_ = get_parameter("barrel_joint_frame").as_string();
     barrel_frame_ = get_parameter("barrel_frame").as_string();
     barrel_offset_z_ = get_parameter("barrel_offset_z").as_double();
-    const auto gimbal_topic = get_parameter("gimbal_topic").as_string();
+    if (!std::isfinite(barrel_offset_z_)) {
+      RCLCPP_WARN(
+        get_logger(), "barrel_offset_z is not finite (%.6f); using 0.0", barrel_offset_z_);
+      barrel_offset_z_ = 0.0;
+    }
+    const auto gimbal_state_topic = get_parameter("gimbal_state_topic").as_string();
 
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
     publishBarrelOffsetStatic();
 
-    gimbal_sub_ = create_subscription<gimbal_driver::msg::GimbalAngles>(
-      gimbal_topic,
+    gimbal_state_sub_ = create_subscription<gimbal_driver::msg::GimbalState>(
+      gimbal_state_topic,
       rclcpp::SensorDataQoS(),
-      [this](const gimbal_driver::msg::GimbalAngles::SharedPtr msg) {
+      [this](const gimbal_driver::msg::GimbalState::SharedPtr msg) {
         BroadcastGimbalTf(*msg);
       });
 
     RCLCPP_INFO(
       get_logger(),
-      "sentry_tf_node started. topic=%s, chain: %s --yaw-> %s -> %s and %s --static(+Z)-> %s --pitch-> %s "
+      "sentry_tf_node started. state_topic=%s, chain: %s --yaw-> %s -> %s and %s --static(+Z)-> %s --pitch-> %s "
       "(barrel_offset_z=%.3f m)",
-      gimbal_topic.c_str(), base_frame_.c_str(), yaw_frame_.c_str(), world_frame_.c_str(),
+      gimbal_state_topic.c_str(), base_frame_.c_str(), yaw_frame_.c_str(), world_frame_.c_str(),
       yaw_frame_.c_str(), barrel_joint_frame_.c_str(), barrel_frame_.c_str(), barrel_offset_z_);
   }
 
@@ -72,8 +77,16 @@ private:
     static_tf_broadcaster_->sendTransform(s);
   }
 
-  void BroadcastGimbalTf(const gimbal_driver::msg::GimbalAngles & msg)
+  void BroadcastGimbalTf(const gimbal_driver::msg::GimbalState & msg)
   {
+    if (!std::isfinite(msg.yaw) || !std::isfinite(msg.pitch)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "ignoring non-finite gimbal state for TF: yaw=%.6f pitch=%.6f",
+        static_cast<double>(msg.yaw), static_cast<double>(msg.pitch));
+      return;
+    }
+
     const double yaw_rad = static_cast<double>(msg.yaw) * M_PI / 180.0;
     const double pitch_rad = -static_cast<double>(msg.pitch) * M_PI / 180.0;
 
@@ -84,6 +97,14 @@ private:
     tf2::Quaternion q_pitch;
     q_pitch.setRotation(tf2::Vector3(0.0, 1.0, 0.0), pitch_rad);
     q_pitch.normalize();
+
+    if (!isFiniteQuaternion(q_yaw) || !isFiniteQuaternion(q_pitch)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "ignoring gimbal TF because quaternion is not finite: yaw=%.6f pitch=%.6f",
+        static_cast<double>(msg.yaw), static_cast<double>(msg.pitch));
+      return;
+    }
 
     const rclcpp::Time t = msg.header.stamp;
 
@@ -128,9 +149,15 @@ private:
     tf_broadcaster_->sendTransform({ts_yaw, ts_world, ts_pitch});
   }
 
+  static bool isFiniteQuaternion(const tf2::Quaternion & q)
+  {
+    return std::isfinite(q.x()) && std::isfinite(q.y()) &&
+           std::isfinite(q.z()) && std::isfinite(q.w());
+  }
+
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::unique_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
-  rclcpp::Subscription<gimbal_driver::msg::GimbalAngles>::SharedPtr gimbal_sub_;
+  rclcpp::Subscription<gimbal_driver::msg::GimbalState>::SharedPtr gimbal_state_sub_;
   std::string base_frame_;
   std::string world_frame_;
   std::string yaw_frame_;

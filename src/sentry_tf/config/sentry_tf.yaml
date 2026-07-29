@@ -1,10 +1,10 @@
-# sentry_tf：由 /ly/gimbal/angles 广播 TF 链
+# sentry_tf：由 /ly/gimbal/state 广播 TF 链
 #   base_link --(yaw)--> gimbal_small_yaw --(yaw inverse)--> gimbal_world
 #   gimbal_small_yaw --static(+Z)--> gimbal_barrel_joint --(pitch)--> gimbal_barrel
 # ????yaw ?????pitch ????
 sentry_tf_node:
   ros__parameters:
-    gimbal_topic: "/ly/gimbal/angles" # 云台角度输入话题
+    gimbal_state_topic: "/ly/gimbal/state" # 云台状态输入话题
     base_frame: "base_link" # 机器人基座坐标系
     world_frame: "gimbal_world" # 云台世界坐标系
     yaw_frame: "gimbal_small_yaw" # 偏航机构坐标系

@@ -33,6 +33,7 @@ struct AimComputationConfig
   bool use_air_resistance{true};
   double yaw_offset_rad{0.0};
   double pitch_offset_rad{0.0};
+  double muzzle_offset_x_m{0.0};
   geometry_msgs::msg::Vector3 target_offset;
   AimSelectionConfig selection;
 };

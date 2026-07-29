@@ -177,7 +177,7 @@ AimAngles computeAimAngles(
   MpcTrajectorySolution traj =
     solveMpcTrajectory(
       bullet_speed, target_x, target_y, target_z,
-      config.use_air_resistance);
+      config.use_air_resistance, config.muzzle_offset_x_m);
   if (traj.unsolvable) {
     std::ostringstream out;
     out << std::fixed << std::setprecision(3)

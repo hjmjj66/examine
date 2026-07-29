@@ -17,6 +17,7 @@
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/u_int8.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>
@@ -163,8 +164,8 @@ public:
     declare_parameter<std::string>(
       "selected_target_id_topic", "/decider/selected_target_id");
     declare_parameter<std::string>("aim_result_topic", "/ly/aim/result");
-    declare_parameter<std::string>("gimbal_angles_topic", "/ly/gimbal/angles");
     declare_parameter<std::string>("gimbal_state_topic", "/ly/gimbal/state");
+    declare_parameter<std::string>("gimbal_posture_topic", "/ly/gimbal/posture");
     declare_parameter<std::string>("bullet_speed_topic", "/ly/game/bullet");
     declare_parameter<std::string>("control_angles_topic", "/ly/control/angles");
     declare_parameter<std::string>("control_trajectory_topic", "/ly/control/trajectory");
@@ -174,12 +175,14 @@ public:
       "debug_target_point_topic", "/armor_controller/debug/target_point_barrel");
     declare_parameter<std::string>(
       "debug_selected_armor_index_topic", "/armor_controller/debug/selected_armor_index");
+    declare_parameter<bool>("debug_aim_geometry_log", false);
     declare_parameter<bool>("publish_legacy_control_topics", true);
     declare_parameter<bool>("publish_control_angles", false);
     declare_parameter<bool>("publish_control_trajectory", false);
     declare_parameter<bool>("manual_fire_mode", false);
     declare_parameter<double>("publish_rate_hz", 100.0);
     declare_parameter<double>("fire_rate_hz", 10.0);
+    declare_parameter<double>("overclock_fire_rate_hz", 20.0);
     declare_parameter<double>("bullet_speed_mps", 23.0);
     declare_parameter<double>("min_bullet_speed_mps", 20.0);
     declare_parameter<double>("fallback_bullet_speed_mps", 23.0);
@@ -189,6 +192,7 @@ public:
     declare_parameter<double>("tol_deltay_m", 0.1);
     declare_parameter<double>("bullet_mass_kg", 3.2e-3);
     declare_parameter<double>("bullet_diameter_m", 16.8e-3);
+    declare_parameter<double>("muzzle_offset_x_m", 0.0);
     declare_parameter<int>("max_iter", 100);
     declare_parameter<double>("tol", 1e-6);
     declare_parameter<std::string>("barrel_joint_frame", "gimbal_barrel_joint");
@@ -259,8 +263,8 @@ public:
     const auto outpost_topic = get_parameter("outpost_state_topic").as_string();
     const auto selected_target_topic = get_parameter("selected_target_id_topic").as_string();
     const auto aim_result_topic = get_parameter("aim_result_topic").as_string();
-    const auto gimbal_topic = get_parameter("gimbal_angles_topic").as_string();
     const auto gimbal_state_topic = get_parameter("gimbal_state_topic").as_string();
+    const auto gimbal_posture_topic = get_parameter("gimbal_posture_topic").as_string();
     const auto bullet_topic = get_parameter("bullet_speed_topic").as_string();
     const auto control_angles_topic = get_parameter("control_angles_topic").as_string();
     const auto control_trajectory_topic =
@@ -270,6 +274,7 @@ public:
     const auto debug_target_point_topic = get_parameter("debug_target_point_topic").as_string();
     const auto debug_selected_armor_index_topic =
       get_parameter("debug_selected_armor_index_topic").as_string();
+    debug_aim_geometry_log_ = get_parameter("debug_aim_geometry_log").as_bool();
 
     publish_legacy_control_topics_ = get_parameter("publish_legacy_control_topics").as_bool();
     publish_control_angles_ = get_parameter("publish_control_angles").as_bool();
@@ -277,6 +282,7 @@ public:
     manual_fire_mode_ = get_parameter("manual_fire_mode").as_bool();
     const double publish_rate = get_parameter("publish_rate_hz").as_double();
     fire_rate_hz_ = get_parameter("fire_rate_hz").as_double();
+    overclock_fire_rate_hz_ = get_parameter("overclock_fire_rate_hz").as_double();
     bullet_speed_ = get_parameter("bullet_speed_mps").as_double();
     min_bullet_speed_ = get_parameter("min_bullet_speed_mps").as_double();
     fallback_bullet_speed_ = get_parameter("fallback_bullet_speed_mps").as_double();
@@ -286,6 +292,7 @@ public:
     tol_deltay_ = get_parameter("tol_deltay_m").as_double();
     bullet_mass_ = get_parameter("bullet_mass_kg").as_double();
     bullet_diameter_ = get_parameter("bullet_diameter_m").as_double();
+    muzzle_offset_x_ = get_parameter("muzzle_offset_x_m").as_double();
     max_iter_ = get_parameter("max_iter").as_int();
     tol_ = get_parameter("tol").as_double();
     barrel_joint_frame_ = get_parameter("barrel_joint_frame").as_string();
@@ -347,6 +354,7 @@ public:
       get_parameter("yaw_offset_deg").as_double() * kPi / 180.0;
     mpc_aim_config_.pitch_offset_rad =
       get_parameter("pitch_offset_deg").as_double() * kPi / 180.0;
+    mpc_aim_config_.muzzle_offset_x_m = muzzle_offset_x_;
     mpc_aim_config_.selection.enable_smart_selector = enable_smart_selector_;
     mpc_aim_config_.selection.low_speed_angular_velocity_threshold =
       smart_selector_max_angular_velocity_;
@@ -483,15 +491,14 @@ public:
           msg->yaw_alpha, msg->pitch_alpha, msg->header.stamp, true);
       });
 
-    gimbal_sub_ = create_subscription<gimbal_driver::msg::GimbalAngles>(
-      gimbal_topic, realtime_sensor_qos,
-      [this](const gimbal_driver::msg::GimbalAngles::SharedPtr msg) {
-        if (msg == nullptr) {
-          return;
+    posture_sub_ = create_subscription<std_msgs::msg::UInt8>(
+      gimbal_posture_topic, realtime_sensor_qos,
+      [this](const std_msgs::msg::UInt8::SharedPtr msg) {
+        if (msg != nullptr) {
+          overclock_mode_ = msg->data >= 4U && msg->data <= 6U;
         }
-        updateGimbalState(
-          msg->yaw, msg->pitch, 0.0, 0.0, 0.0, 0.0, msg->header.stamp, false);
       });
+
     bullet_sub_ = create_subscription<gimbal_driver::msg::BulletInfo>(
       bullet_topic, realtime_sensor_qos,
       [this](const gimbal_driver::msg::BulletInfo::SharedPtr msg) {
@@ -513,13 +520,19 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "armor_controller_node started. front_0=%s front_1=%s back=%s outpost=%s "
-      "selected_id=%s aim_result=%s gimbal=%s bullet=%s frame=%s",
+      "selected_id=%s aim_result=%s gimbal_state=%s posture=%s bullet=%s frame=%s",
       front_0_topic.c_str(), front_1_topic.c_str(), back_topic.c_str(), outpost_topic.c_str(),
-      selected_target_topic.c_str(), aim_result_topic.c_str(), gimbal_topic.c_str(),
+      selected_target_topic.c_str(), aim_result_topic.c_str(), gimbal_state_topic.c_str(),
+      gimbal_posture_topic.c_str(),
       bullet_topic.c_str(), barrel_joint_frame_.c_str());
   }
 
 private:
+  double activeFireRateHz() const
+  {
+    return overclock_mode_ ? overclock_fire_rate_hz_ : fire_rate_hz_;
+  }
+
   void updateGimbalState(
     float yaw_deg,
     float pitch_deg,
@@ -530,6 +543,23 @@ private:
     const builtin_interfaces::msg::Time & stamp,
     bool has_dynamics)
   {
+    if (!std::isfinite(yaw_deg) || !std::isfinite(pitch_deg) ||
+      (has_dynamics &&
+      (!std::isfinite(yaw_omega_deg_s) || !std::isfinite(pitch_omega_deg_s) ||
+      !std::isfinite(yaw_alpha_deg_s2) || !std::isfinite(pitch_alpha_deg_s2))))
+    {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "ignoring non-finite gimbal feedback: yaw=%.6f pitch=%.6f "
+        "yaw_omega=%.6f pitch_omega=%.6f yaw_alpha=%.6f pitch_alpha=%.6f "
+        "has_dynamics=%s",
+        static_cast<double>(yaw_deg), static_cast<double>(pitch_deg),
+        static_cast<double>(yaw_omega_deg_s), static_cast<double>(pitch_omega_deg_s),
+        static_cast<double>(yaw_alpha_deg_s2), static_cast<double>(pitch_alpha_deg_s2),
+        has_dynamics ? "true" : "false");
+      return;
+    }
+
     const auto received_at = std::chrono::steady_clock::now();
     const rclcpp::Time received_ros_time = now();
     std::lock_guard<std::mutex> lock(data_mutex_);
@@ -584,6 +614,19 @@ private:
     double pitch_alpha_deg_s2)
   {
     if (!trajectory_pub_) {
+      return;
+    }
+    if (
+      !std::isfinite(yaw_deg) || !std::isfinite(pitch_deg) ||
+      !std::isfinite(yaw_omega_deg_s) || !std::isfinite(pitch_omega_deg_s) ||
+      !std::isfinite(yaw_alpha_deg_s2) || !std::isfinite(pitch_alpha_deg_s2))
+    {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "not publishing non-finite control trajectory: yaw=%.6f pitch=%.6f "
+        "yaw_omega=%.6f pitch_omega=%.6f yaw_alpha=%.6f pitch_alpha=%.6f",
+        yaw_deg, pitch_deg, yaw_omega_deg_s, pitch_omega_deg_s,
+        yaw_alpha_deg_s2, pitch_alpha_deg_s2);
       return;
     }
     aim_armor_controller::ControllerTrajectoryMessage msg;
@@ -657,7 +700,8 @@ private:
     if (
       !std::isfinite(target_x) || !std::isfinite(target_y) || !std::isfinite(target_z) ||
       !std::isfinite(bullet_speed_) || !std::isfinite(bullet_mass_) ||
-      !std::isfinite(bullet_diameter_) || bullet_speed_ <= 0.0 ||
+      !std::isfinite(bullet_diameter_) || !std::isfinite(muzzle_offset_x_) ||
+      bullet_speed_ <= 0.0 ||
       bullet_mass_ <= 0.0 || bullet_diameter_ <= 0.0 || max_iter_ <= 0)
     {
       RCLCPP_WARN_THROTTLE(
@@ -679,6 +723,62 @@ private:
     const double k1 = kCd * kRho * (kPi * bullet_diameter_ * bullet_diameter_) / 8.0 / bullet_mass_;
     if (!std::isfinite(theta) || !std::isfinite(k1) || std::abs(k1) < 1e-12) {
       return false;
+    }
+
+    if (std::abs(muzzle_offset_x_) > 1e-9) {
+      const auto residual_at = [&](double pitch_rad, double & residual, double & flight_time) {
+          const double cth = std::cos(pitch_rad);
+          if (!std::isfinite(cth) || std::abs(cth) < 1e-8) {
+            return false;
+          }
+          const double sth = std::sin(pitch_rad);
+          const double flight_distance = distance - muzzle_offset_x_ * cth;
+          if (!std::isfinite(flight_distance) || flight_distance <= 1e-6) {
+            return false;
+          }
+          const double target_z_from_muzzle = target_z - muzzle_offset_x_ * sth;
+          flight_time = (std::exp(k1 * flight_distance) - 1.0) /
+            (k1 * bullet_speed_ * cth);
+          if (!std::isfinite(flight_time)) {
+            return false;
+          }
+          residual = target_z_from_muzzle - bullet_speed_ * sth * flight_time / cth +
+            0.5 * kGravity * flight_time * flight_time / cth / cth;
+          return std::isfinite(residual);
+        };
+
+      bool solved = false;
+      for (int i = 0; i < max_iter_; ++i) {
+        if (!residual_at(theta, delta_z, time)) {
+          return false;
+        }
+        if (std::abs(delta_z) < tol_) {
+          solved = true;
+          break;
+        }
+        constexpr double kDerivativeStep = 1e-5;
+        double residual_plus = 0.0;
+        double residual_minus = 0.0;
+        double unused_time = 0.0;
+        if (
+          !residual_at(theta + kDerivativeStep, residual_plus, unused_time) ||
+          !residual_at(theta - kDerivativeStep, residual_minus, unused_time))
+        {
+          return false;
+        }
+        const double derivative = (residual_plus - residual_minus) / (2.0 * kDerivativeStep);
+        if (!std::isfinite(derivative) || std::abs(derivative) < 1e-12) {
+          return false;
+        }
+        theta = std::clamp(theta - delta_z / derivative, -1.4, 1.4);
+      }
+
+      if (!solved || !std::isfinite(theta) || !std::isfinite(delta_z)) {
+        return false;
+      }
+      pitch = theta;
+      yaw = std::atan2(target_y, target_x);
+      return true;
     }
 
     for (int i = 0; i < max_iter_; ++i) {
@@ -745,6 +845,13 @@ private:
     const auto command = limitCommandAngles(
       static_cast<double>(gimbal.yaw_deg), static_cast<double>(gimbal.pitch_deg),
       gimbal, stamp);
+    if (!std::isfinite(command.yaw_deg) || !std::isfinite(command.pitch_deg)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "not publishing fallback with non-finite command: reason=%s yaw=%.6f pitch=%.6f",
+        reason.c_str(), command.yaw_deg, command.pitch_deg);
+      return;
+    }
 
     sentry_msgs::msg::AimResult aim_msg;
     aim_msg.header.stamp = stamp;
@@ -776,6 +883,21 @@ private:
     double desired_yaw_deg, double desired_pitch_deg,
     const GimbalState & gimbal, const rclcpp::Time & stamp)
   {
+    if (
+      !std::isfinite(desired_yaw_deg) || !std::isfinite(desired_pitch_deg) ||
+      !std::isfinite(gimbal.yaw_deg) || !std::isfinite(gimbal.pitch_deg))
+    {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "not updating command rate limiter with non-finite angles: desired=(%.6f, %.6f) "
+        "gimbal=(%.6f, %.6f)",
+        desired_yaw_deg, desired_pitch_deg,
+        static_cast<double>(gimbal.yaw_deg), static_cast<double>(gimbal.pitch_deg));
+      return aim_armor_controller::CommandAngles{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::quiet_NaN()};
+    }
+
     if (!command_rate_limiter_initialized_) {
       command_rate_limiter_.reset(
         static_cast<double>(gimbal.yaw_deg), static_cast<double>(gimbal.pitch_deg));
@@ -1323,7 +1445,7 @@ private:
           point_world.point.x - world_to_gun.transform.translation.x,
           point_world.point.y - world_to_gun.transform.translation.y,
           point_world.point.z - world_to_gun.transform.translation.z,
-          use_air_resistance_);
+          use_air_resistance_, muzzle_offset_x_);
       };
 
     double fly_time = 0.0;
@@ -1457,12 +1579,21 @@ private:
       return;
     }
 
+    const double plan_relative_yaw_rad = plan.yaw;
     plan.yaw = aim_armor_controller::mpcLimitRad(plan.yaw + aim.yaw_rad);
     const double output_yaw_rad =
       aim_armor_controller::unwrapAngleNear(plan.yaw, gimbal.yaw_rad);
     const double output_pitch_rad = plan.pitch;
     const double output_yaw_deg = output_yaw_rad * 180.0 / kPi;
     const double output_pitch_deg = output_pitch_rad * 180.0 / kPi;
+    if (
+      !std::isfinite(output_yaw_deg) || !std::isfinite(output_pitch_deg) ||
+      !std::isfinite(plan.yaw_velocity) || !std::isfinite(plan.pitch_velocity) ||
+      !std::isfinite(plan.yaw_acceleration) || !std::isfinite(plan.pitch_acceleration))
+    {
+      publishFallback(gimbal, "mpc_output_non_finite");
+      return;
+    }
     publishControlTrajectory(
       control_stamp, output_yaw_deg, output_pitch_deg,
       plan.yaw_velocity * 180.0 / kPi, plan.pitch_velocity * 180.0 / kPi,
@@ -1474,21 +1605,79 @@ private:
     geometry_msgs::msg::PointStamped aim_world;
     const rclcpp::Time aim_time =
       measurement_time + rclcpp::Duration::from_seconds(delay_time);
-    if (
-      transformMpcAimPointToWorld(
+    if (transformMpcAimPointToWorld(
         aim.candidate.point_world, active_target.source_frame, aim_time,
-        target_to_world_ptr, aim_world) &&
-      transformWorldToBarrel(
-        aim_world.point.x, aim_world.point.y, aim_world.point.z, world_frame_id_,
-        debug_bx, debug_by, debug_bz, control_stamp))
+        target_to_world_ptr, aim_world))
     {
-      geometry_msgs::msg::PointStamped debug_point;
-      debug_point.header.stamp = control_stamp;
-      debug_point.header.frame_id = barrel_joint_frame_;
-      debug_point.point.x = debug_bx;
-      debug_point.point.y = debug_by;
-      debug_point.point.z = debug_bz;
-      debug_target_point_pub_->publish(debug_point);
+      const bool has_barrel_debug = transformWorldToBarrel(
+        aim_world.point.x, aim_world.point.y, aim_world.point.z, world_frame_id_,
+        debug_bx, debug_by, debug_bz, control_stamp);
+      if (has_barrel_debug) {
+        geometry_msgs::msg::PointStamped debug_point;
+        debug_point.header.stamp = control_stamp;
+        debug_point.header.frame_id = barrel_joint_frame_;
+        debug_point.point.x = debug_bx;
+        debug_point.point.y = debug_by;
+        debug_point.point.z = debug_bz;
+        debug_target_point_pub_->publish(debug_point);
+      }
+      if (debug_aim_geometry_log_) {
+        const double solver_x =
+          aim_world.point.x - world_to_gun.transform.translation.x;
+        const double solver_y =
+          aim_world.point.y - world_to_gun.transform.translation.y;
+        const double solver_z =
+          aim_world.point.z - world_to_gun.transform.translation.z;
+        RCLCPP_INFO_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "[DEBUG-muzzle-aim] mode=mpc src=%s id=%u selected=%d muzzle_x=%.3f "
+          "bullet=%.3f delay=%.4f target_center=(%.3f, %.3f, %.3f) "
+          "target_velocity=(%.3f, %.3f, %.3f) target_yaw=%.3f target_omega=%.3f "
+          "aim_world=(%.3f, %.3f, %.3f) gun_world=(%.3f, %.3f, %.3f) "
+          "solver_xyz=(%.3f, %.3f, %.3f) solver_d=%.3f "
+          "raw_yaw=%.3f raw_pitch=%.3f fly_time=%.4f "
+          "aim_yaw=%.3f aim_pitch=%.3f plan_rel_yaw=%.3f "
+          "output=(%.3f, %.3f) gimbal=(%.3f, %.3f) "
+          "barrel_debug=(%.3f, %.3f, %.3f) barrel_debug_valid=%s",
+          active_target.source_frame.c_str(),
+          static_cast<unsigned int>(active_target.model.id),
+          aim.candidate.armor_index,
+          muzzle_offset_x_,
+          bullet_speed,
+          delay_time,
+          aim.predicted_target.center.x,
+          aim.predicted_target.center.y,
+          aim.predicted_target.center.z,
+          aim.predicted_target.velocity.x,
+          aim.predicted_target.velocity.y,
+          aim.predicted_target.velocity.z,
+          aim.predicted_target.yaw,
+          aim.predicted_target.angular_velocity,
+          aim_world.point.x,
+          aim_world.point.y,
+          aim_world.point.z,
+          world_to_gun.transform.translation.x,
+          world_to_gun.transform.translation.y,
+          world_to_gun.transform.translation.z,
+          solver_x,
+          solver_y,
+          solver_z,
+          std::hypot(solver_x, solver_y),
+          aim.trajectory.yaw * 180.0 / kPi,
+          aim.trajectory.pitch * 180.0 / kPi,
+          aim.trajectory.fly_time,
+          aim.yaw_rad * 180.0 / kPi,
+          aim.pitch_rad * 180.0 / kPi,
+          plan_relative_yaw_rad * 180.0 / kPi,
+          output_yaw_deg,
+          output_pitch_deg,
+          static_cast<double>(gimbal.yaw_deg),
+          static_cast<double>(gimbal.pitch_deg),
+          debug_bx,
+          debug_by,
+          debug_bz,
+          has_barrel_debug ? "true" : "false");
+      }
     }
     const auto debug_target = makeLegacyDebugTarget(aim.predicted_target);
     publishSelectedArmorDebug(active_target, debug_target, aim.candidate.armor_index);
@@ -1514,13 +1703,14 @@ private:
         std::abs(outpost_facing_error_rad) <= outpost_shoot_yaw_gate_rad_;
     }
 
+    const double active_fire_rate_hz = activeFireRateHz();
     bool fire_this_tick = false;
     if (
       !manual_fire_mode_ && !active_target.tracking_hold && fire_allowed &&
-      outpost_facing_allowed && plan.fire && fire_rate_hz_ > 0.0)
+      outpost_facing_allowed && plan.fire && active_fire_rate_hz > 0.0)
     {
       const double elapsed = (now() - last_fire_time_).seconds();
-      if (elapsed >= 1.0 / fire_rate_hz_) {
+      if (elapsed >= 1.0 / active_fire_rate_hz) {
         aim_armor_controller::toggleFireStatus(fire_code_state_);
         last_fire_time_ = now();
         fire_this_tick = true;
@@ -1538,7 +1728,7 @@ private:
         fire_allowed ? "true" : "false",
         outpost_facing_allowed ? "true" : "false",
         plan.fire ? "true" : "false",
-        fire_rate_hz_,
+        active_fire_rate_hz,
         plan.fire_error,
         mpc_config_.fire_threshold,
         outpost_facing_error_deg,
@@ -1744,6 +1934,14 @@ private:
       fire_control_input, legacy_fire_control_state_);
     const auto command = limitCommandAngles(
       selected.yaw_actual_want_deg, selected.pitch_actual_want_deg, gimbal, control_stamp);
+    if (!std::isfinite(command.yaw_deg) || !std::isfinite(command.pitch_deg)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "fallback: reason=legacy_command_non_finite selected=(%.6f, %.6f)",
+        selected.yaw_actual_want_deg, selected.pitch_actual_want_deg);
+      publishFallback(gimbal, "legacy_command_non_finite");
+      return;
+    }
 
     if (publish_control_angles_ && angle_pub_) {
       gimbal_driver::msg::GimbalAngles angle_msg;
@@ -1761,13 +1959,14 @@ private:
     fire_code_state_.aim_mode = true;
     fire_code_state_.rotate = 1U;
 
+    const double active_fire_rate_hz = activeFireRateHz();
     bool fire_this_tick = false;
     if (
       !manual_fire_mode_ && !active_target.tracking_hold &&
-      fire_control_output.shoot_flag && fire_rate_hz_ > 0.0)
+      fire_control_output.shoot_flag && active_fire_rate_hz > 0.0)
     {
       const double elapsed = (now() - last_fire_time_).seconds();
-      if (elapsed >= 1.0 / fire_rate_hz_) {
+      if (elapsed >= 1.0 / active_fire_rate_hz) {
         aim_armor_controller::toggleFireStatus(fire_code_state_);
         last_fire_time_ = now();
         fire_this_tick = true;
@@ -1789,7 +1988,7 @@ private:
         shoot_yaw_tolerance_deg_,
         shoot_pitch_tolerance_deg_,
         inside_face_window ? "true" : "false",
-        fire_rate_hz_,
+        active_fire_rate_hz,
         selected.armor_index,
         active_target.is_outpost ? "true" : "false");
     }
@@ -1869,6 +2068,7 @@ private:
   bool enable_mpc_{true};
   std::string world_frame_id_{"gimbal_world"};
   bool use_current_time_for_tf_{false};
+  bool debug_aim_geometry_log_{false};
   aim_armor_controller::AimComputationConfig mpc_aim_config_;
   double gimbal_state_history_sec_{2.0};
   aim_armor_controller::MpcPlannerConfig mpc_config_;
@@ -1883,11 +2083,14 @@ private:
   double tol_deltay_{0.1};
   double bullet_mass_{3.2e-3};
   double bullet_diameter_{16.8e-3};
+  double muzzle_offset_x_{0.0};
   int max_iter_{100};
   double tol_{1e-6};
   aim_armor_controller::FireCodeState fire_code_state_{};
   rclcpp::Time last_fire_time_{0, 0, RCL_ROS_TIME};
   double fire_rate_hz_{10.0};
+  double overclock_fire_rate_hz_{20.0};
+  bool overclock_mode_{false};
   aim_armor_controller::LegacyFireControlState legacy_fire_control_state_{};
   aim_armor_controller::CommandRateLimiter command_rate_limiter_;
   rclcpp::Time last_command_limit_stamp_{0, 0, RCL_ROS_TIME};
@@ -1906,7 +2109,7 @@ private:
   rclcpp::Subscription<aim_msgs::msg::OutpostState>::SharedPtr outpost_sub_;
   rclcpp::Subscription<aim_msgs::msg::SelectedTargetId>::SharedPtr selected_target_sub_;
   rclcpp::Subscription<gimbal_driver::msg::GimbalState>::SharedPtr gimbal_state_sub_;
-  rclcpp::Subscription<gimbal_driver::msg::GimbalAngles>::SharedPtr gimbal_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr posture_sub_;
   rclcpp::Subscription<gimbal_driver::msg::BulletInfo>::SharedPtr bullet_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
