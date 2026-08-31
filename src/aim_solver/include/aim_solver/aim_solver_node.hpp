@@ -14,6 +14,7 @@
 #include <tf2_ros/transform_listener.h>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include "aim_msgs/msg/armor_pose_observation.hpp"
 #include "aim_msgs/msg/armor_pose_set_array.hpp"
 #include "aim_msgs/msg/armor_set_array.hpp"
 #include "aim_msgs/msg/armor.hpp"
@@ -21,6 +22,19 @@
 
 namespace aim_solver
 {
+
+inline aim_msgs::msg::ArmorPoseObservation makeArmorPoseObservation(
+  const aim_msgs::msg::Armor & source,
+  const geometry_msgs::msg::Pose & camera_pose,
+  const geometry_msgs::msg::Pose & world_pose)
+{
+  aim_msgs::msg::ArmorPoseObservation observation;
+  observation.pose = world_pose;
+  observation.camera_pose = camera_pose;
+  observation.corners = source.corners;
+  observation.armor_class = source.armor_class;
+  return observation;
+}
 
 class AimSolverNode : public rclcpp::Node
 {

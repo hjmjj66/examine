@@ -80,6 +80,17 @@ if(BUILD_TESTING)
     target_include_directories(test_fixed_timestamp_offsets PRIVATE include)
   endif()
 
+  ament_add_gtest(test_pose_observation_forwarding
+    test/test_pose_observation_forwarding.cpp
+  )
+  if(TARGET test_pose_observation_forwarding)
+    target_include_directories(test_pose_observation_forwarding PRIVATE include)
+    ament_target_dependencies(test_pose_observation_forwarding
+      aim_msgs
+      geometry_msgs
+    )
+  endif()
+
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()

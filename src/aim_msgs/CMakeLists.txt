@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Armor.msg"
   "msg/ArmorArray.msg"
   "msg/ArmorClass.msg"
+  "msg/ArmorPoseObservation.msg"
   "msg/ArmorPoseSet.msg"
   "msg/ArmorPoseSetArray.msg"
   "msg/ArmorSet.msg"

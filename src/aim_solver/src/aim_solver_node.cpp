@@ -384,7 +384,7 @@ void AimSolverNode::onArmorSets(
       pose_set.header.frame_id = target_frame_;
     }
     pose_set.id = armor_set.id;
-    pose_set.armor_poses.reserve(armor_set.armors.size());
+    pose_set.observations.reserve(armor_set.armors.size());
 
     for (const auto & solved : solved_armors) {
       if (solved.id != armor_set.id) {
@@ -408,11 +408,12 @@ void AimSolverNode::onArmorSets(
           pose_msg);
       }
 
-      pose_set.armor_poses.push_back(pose_msg);
+      pose_set.observations.push_back(makeArmorPoseObservation(
+          solved.armor, solved.source_pose, pose_msg));
       solved_poses.emplace_back(solved.type, pose_msg);
     }
 
-    if (!pose_set.armor_poses.empty()) {
+    if (!pose_set.observations.empty()) {
       output.armor_pose_sets.push_back(std::move(pose_set));
     }
   }
