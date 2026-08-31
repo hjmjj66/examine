@@ -663,8 +663,6 @@ void TargetTracker::addFrame(
     }
     insertIfMissing(values, measurement.pose_key, initial_pose);
     addMeasurementFactors(graph, values, frame, measurement);
-    addFactor(graph, boost::make_shared<gtsam::PriorFactor<gtsam::Pose3>>(
-        measurement.pose_key, initial_pose, isotropicNoise(6, 1.0)));
   }
 }
 
@@ -719,8 +717,6 @@ void TargetTracker::queueMeasurement(
     pending_values_, measurement.pose_key, toPose3(measurement.observation.camera_pose));
   insertIfMissing(last_values_, measurement.pose_key, toPose3(measurement.observation.camera_pose));
   addMeasurementFactors(pending_graph_, pending_values_, frame, measurement);
-  addFactor(pending_graph_, boost::make_shared<gtsam::PriorFactor<gtsam::Pose3>>(
-      measurement.pose_key, toPose3(measurement.observation.camera_pose), isotropicNoise(6, 1.0)));
 }
 
 bool TargetTracker::rebuildGraph()
