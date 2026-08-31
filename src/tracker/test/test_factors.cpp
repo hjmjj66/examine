@@ -5,13 +5,13 @@
 
 #include <array>
 #include <cmath>
+#include <vector>
 
-#include <gtsam/geometry/Cal3DS2.h>
-#include <gtsam/geometry/PinholeCamera.h>
 #include <gtsam/geometry/Rot2.h>
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/noiseModel/Isotropic.h>
 
+#include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 
 namespace
@@ -99,18 +99,29 @@ TEST(TrackerFactors, ReprojectionFactorHasZeroResidualForKnownPinholeProjection)
 {
   const cv::Mat camera_matrix =
     (cv::Mat_<double>(3, 3) << 400.0, 0.0, 320.0, 0.0, 500.0, 240.0, 0.0, 0.0, 1.0);
-  const cv::Mat distortion_coefficients = cv::Mat::zeros(1, 5, CV_64F);
-  const gtsam::Cal3DS2 calibration(400.0, 500.0, 0.0, 320.0, 240.0, 0.0, 0.0, 0.0, 0.0);
+  const cv::Mat distortion_coefficients =
+    (cv::Mat_<double>(5, 1) << 0.01, -0.001, 0.0005, -0.0003, 0.0001);
+  const cv::Mat row_distortion_coefficients =
+    (cv::Mat_<double>(1, 5) << 0.01, -0.001, 0.0005, -0.0003, 0.0001);
   const std::array<gtsam::Point3, 4> armor_points{
     gtsam::Point3(-0.1, -0.05, 0.0),
     gtsam::Point3(-0.1, 0.05, 0.0),
     gtsam::Point3(0.1, 0.05, 0.0),
     gtsam::Point3(0.1, -0.05, 0.0)};
   const gtsam::Pose3 pose(gtsam::Rot3::Identity(), gtsam::Point3(0.0, 0.0, 2.0));
+  const cv::Mat rvec = cv::Mat::zeros(3, 1, CV_64F);
+  const cv::Mat tvec = (cv::Mat_<double>(3, 1) << 0.0, 0.0, 2.0);
+  std::vector<cv::Point3d> object_points;
+  object_points.reserve(armor_points.size());
+  for (const auto & point : armor_points) {
+    object_points.emplace_back(point.x(), point.y(), point.z());
+  }
+  std::vector<cv::Point2d> expected_corners;
+  cv::projectPoints(
+    object_points, rvec, tvec, camera_matrix, distortion_coefficients, expected_corners);
   std::array<gtsam::Point2, 4> corners{};
   for (std::size_t i = 0; i < armor_points.size(); ++i) {
-    corners[i] = calibration.uncalibrate(
-      gtsam::PinholeCamera<gtsam::Cal3DS2>::Project(pose.transformFrom(armor_points[i])));
+    corners[i] = gtsam::Point2(expected_corners[i].x, expected_corners[i].y);
   }
 
   const auto factor = tracker::ArmorReprojFactor(
@@ -119,6 +130,13 @@ TEST(TrackerFactors, ReprojectionFactorHasZeroResidualForKnownPinholeProjection)
   const gtsam::Vector residual = factor.evaluateError(pose);
 
   EXPECT_TRUE(residual.isApprox(gtsam::Vector::Zero(8)));
+
+  const auto row_factor = tracker::ArmorReprojFactor(
+    gtsam::Symbol('p', 1), camera_matrix, row_distortion_coefficients,
+    armor_points, corners, unitNoise(8));
+  const gtsam::Vector row_residual = row_factor.evaluateError(pose);
+
+  EXPECT_TRUE(row_residual.isApprox(gtsam::Vector::Zero(8)));
 }
 
 TEST(TrackerMeasurement, ConvertsObservationFieldsWithoutLoss)

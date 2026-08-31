@@ -1,9 +1,12 @@
 #include "tracker/factors.hpp"
 
+#include <Eigen/Core>
+
 #include <cmath>
+#include <vector>
 
-#include <gtsam/geometry/PinholeCamera.h>
-
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core.hpp>
 namespace tracker
 {
 namespace
@@ -82,6 +85,18 @@ gtsam::Vector scalarResidual(double value)
   gtsam::Vector residual(1);
   residual[0] = value;
   return residual;
+}
+
+cv::Mat rotationMatrix(const gtsam::Rot3 & rotation)
+{
+  const Eigen::Matrix3d matrix = rotation.matrix();
+  cv::Mat result(3, 3, CV_64F);
+  for (int row = 0; row < 3; ++row) {
+    for (int column = 0; column < 3; ++column) {
+      result.at<double>(row, column) = matrix(row, column);
+    }
+  }
+  return result;
 }
 
 }  // namespace
@@ -204,7 +219,7 @@ ArmorGeometryFactor::ArmorGeometryFactor(
   const gtsam::Pose3 & camera_to_world,
   std::size_t armor_index,
   const gtsam::SharedNoiseModel & noise_model)
-: gtsam::NoiseModelFactorN<gtsam::Pose3, double, double, double, double, gtsam::Point3>(
+: gtsam::NoiseModelFactorN<gtsam::Pose3, double, double, double, gtsam::Rot2, gtsam::Point3>(
     noise_model, p_camera, radius, radius_offset, height_offset, center_yaw, center_position),
   camera_to_world_(camera_to_world), armor_index_(armor_index)
 {
@@ -302,25 +317,33 @@ ArmorReprojFactor::ArmorReprojFactor(
   const std::array<gtsam::Point2, 4> & corners,
   const gtsam::SharedNoiseModel & noise_model)
 : gtsam::NoiseModelFactorN<gtsam::Pose3>(noise_model, p_camera),
-  calibration_(
-    camera_matrix.at<double>(0, 0), camera_matrix.at<double>(1, 1),
-    camera_matrix.at<double>(0, 1), camera_matrix.at<double>(0, 2),
-    camera_matrix.at<double>(1, 2), distortion_coefficients.at<double>(0, 0),
-    distortion_coefficients.at<double>(0, 1), distortion_coefficients.at<double>(0, 2),
-    distortion_coefficients.at<double>(0, 3)),
+  camera_matrix_(camera_matrix.clone()),
+  distortion_coefficients_(distortion_coefficients.clone()),
   armor_points_(armor_points), corners_(corners)
 {
 }
 
 gtsam::Vector ArmorReprojFactor::reprojectionResidual(const gtsam::Pose3 & p_camera) const
 {
+  std::vector<cv::Point3d> object_points;
+  object_points.reserve(armor_points_.size());
+  for (const auto & point : armor_points_) {
+    object_points.emplace_back(point.x(), point.y(), point.z());
+  }
+  const cv::Mat rotation = rotationMatrix(p_camera.rotation());
+  cv::Mat rvec;
+  cv::Rodrigues(rotation, rvec);
+  const cv::Mat tvec =
+    (cv::Mat_<double>(3, 1) << p_camera.translation().x(), p_camera.translation().y(),
+      p_camera.translation().z());
+  std::vector<cv::Point2d> projected_points;
+  cv::projectPoints(
+    object_points, rvec, tvec, camera_matrix_, distortion_coefficients_, projected_points);
+
   gtsam::Vector residual(8);
   for (std::size_t i = 0; i < armor_points_.size(); ++i) {
-    const gtsam::Point2 projected = calibration_.uncalibrate(
-      gtsam::PinholeCamera<gtsam::Cal3DS2>::Project(
-        p_camera.transformFrom(armor_points_[i])));
-    residual[2 * i] = projected.x() - corners_[i].x();
-    residual[2 * i + 1] = projected.y() - corners_[i].y();
+    residual[2 * i] = projected_points[i].x - corners_[i].x();
+    residual[2 * i + 1] = projected_points[i].y - corners_[i].y();
   }
   return residual;
 }

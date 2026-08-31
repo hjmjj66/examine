@@ -5,7 +5,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gtsam/base/Matrix.h>
-#include <gtsam/geometry/Cal3DS2.h>
 #include <gtsam/geometry/Point2.h>
 #include <gtsam/geometry/Point3.h>
 #include <gtsam/geometry/Pose3.h>
@@ -94,7 +93,7 @@ public:
 };
 
 class ArmorGeometryFactor : public gtsam::NoiseModelFactorN<
-    gtsam::Pose3, double, double, double, double, gtsam::Point3>
+    gtsam::Pose3, double, double, double, gtsam::Rot2, gtsam::Point3>
 {
 public:
   ArmorGeometryFactor(
@@ -153,7 +152,8 @@ public:
 private:
   gtsam::Vector reprojectionResidual(const gtsam::Pose3 & p_camera) const;
 
-  gtsam::Cal3DS2 calibration_;
+  cv::Mat camera_matrix_;
+  cv::Mat distortion_coefficients_;
   std::array<gtsam::Point3, 4> armor_points_;
   std::array<gtsam::Point2, 4> corners_;
 };
