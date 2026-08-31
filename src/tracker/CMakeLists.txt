@@ -12,7 +12,9 @@ find_package(Eigen3 REQUIRED)
 find_package(GTSAM REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 add_library(tracker_factor_primitives
   src/factors.cpp
@@ -31,7 +33,9 @@ ament_target_dependencies(tracker_factor_primitives
   aim_msgs
   builtin_interfaces
   geometry_msgs
+  rclcpp
   std_msgs
+  visualization_msgs
 )
 
 install(TARGETS tracker_factor_primitives
@@ -42,6 +46,39 @@ install(TARGETS tracker_factor_primitives
 
 install(DIRECTORY include/
   DESTINATION include
+)
+
+add_executable(tracker_node
+  src/tracker_main.cpp
+  src/tracker_node.cpp
+)
+
+target_compile_features(tracker_node PUBLIC cxx_std_17)
+target_include_directories(tracker_node PRIVATE
+  include
+  ${EIGEN3_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(tracker_node
+  tracker_factor_primitives
+  gtsam
+  ${OpenCV_LIBS}
+)
+ament_target_dependencies(tracker_node
+  aim_msgs
+  builtin_interfaces
+  geometry_msgs
+  rclcpp
+  std_msgs
+  visualization_msgs
+)
+
+install(TARGETS tracker_node
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY config launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
@@ -115,13 +152,39 @@ if(BUILD_TESTING)
     )
   endif()
 
+  ament_add_gtest(tracker_node_test
+    test/test_tracker_node.cpp
+  )
+  if(TARGET tracker_node_test)
+    target_compile_features(tracker_node_test PUBLIC cxx_std_17)
+    target_include_directories(tracker_node_test PRIVATE
+      include
+      ${EIGEN3_INCLUDE_DIRS}
+      ${OpenCV_INCLUDE_DIRS}
+    )
+    target_link_libraries(tracker_node_test
+      tracker_factor_primitives
+      gtsam
+      ${OpenCV_LIBS}
+    )
+    ament_target_dependencies(tracker_node_test
+      aim_msgs
+      builtin_interfaces
+      geometry_msgs
+      rclcpp
+      std_msgs
+      visualization_msgs
+    )
+  endif()
+
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-ament_export_dependencies(aim_msgs builtin_interfaces Eigen3 GTSAM geometry_msgs OpenCV std_msgs)
+ament_export_dependencies(
+  aim_msgs builtin_interfaces Eigen3 GTSAM geometry_msgs OpenCV rclcpp std_msgs visualization_msgs)
 ament_export_include_directories(include)
 ament_export_libraries(tracker_factor_primitives)
 

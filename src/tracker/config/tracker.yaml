@@ -1,0 +1,48 @@
+tracker_node:
+  ros__parameters:
+    front_0_armor_pose_set_topic: "/aim_solver/front_0/armor_pose_sets"
+    front_1_armor_pose_set_topic: "/aim_solver/front_1/armor_pose_sets"
+    back_armor_pose_set_topic: "/aim_solver/back/armor_pose_sets"
+    fused_target_state_topic: "/aim_predictor/fused/target_states"
+    delay_statistics_topic: "/aim_predictor/delay_statistics"
+    visualization_topic: "/aim_predictor/visualization"
+    world_frame_id: "gimbal_world"
+    enable_visualization: true
+    window_size: 30
+    min_consecutive_detections_to_track: 10
+    outpost_id: 6
+    confirmation_min_interval_sec: 0.03
+    front_target_hold_sec: 0.10
+    target_lost_timeout_sec: 0.20
+    init_radius: 0.20
+    init_radius_offset: -0.01
+    init_height_offset: 0.02
+    middle_speed_angular_velocity_threshold: 2.0
+    high_speed_angular_velocity_threshold: 4.0
+    low_speed_process_noise_xy: 1600.0
+    low_speed_process_noise_z: 1600.0
+    low_speed_process_noise_yaw: 400.0
+    middle_speed_process_noise_xy: 1600.0
+    middle_speed_process_noise_z: 1600.0
+    middle_speed_process_noise_yaw: 400.0
+    high_speed_process_noise_xy: 1600.0
+    high_speed_process_noise_z: 1600.0
+    high_speed_process_noise_yaw: 400.0
+    front_0_noise_scale: 1.0
+    front_1_noise_scale: 1.0
+    back_noise_scale: 1.0
+    front_0_camera_matrix: [2545.3923687766, 0.0, 624.3889750486,
+                            0.0, 2545.6949582141, 499.7431098183,
+                            0.0, 0.0, 1.0]
+    front_0_distortion_coefficients: [-0.0255345050, 0.2932230829, 0.0010486782,
+                                      0.0007531860, 0.1904016229]
+    front_1_camera_matrix: [1540.4788627878, 0.0, 618.1465079445,
+                            0.0, 1540.8079595135, 502.0792211000,
+                            0.0, 0.0, 1.0]
+    front_1_distortion_coefficients: [-0.2064341559, 0.1641408860, 0.0003104469,
+                                      0.0006853768, -0.0626345390]
+    back_camera_matrix: [549.8351599620, 0.0, 599.1912418111,
+                         0.0, 545.6222130545, 420.2722299780,
+                         0.0, 0.0, 1.0]
+    back_distortion_coefficients: [0.1255592953, -0.1963274373, -0.0012630831,
+                                  -0.0034363489, 0.0630439860]
