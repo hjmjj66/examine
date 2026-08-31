@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "aim_solver/aim_solver_node.hpp"
+#include "aim_msgs/msg/armor_pose_set.hpp"
 
 TEST(PoseObservationForwarding, CopiesSourceFieldsAndBothPoses)
 {
@@ -29,4 +30,11 @@ TEST(PoseObservationForwarding, CopiesSourceFieldsAndBothPoses)
   EXPECT_DOUBLE_EQ(observation.pose.position.x, world_pose.position.x);
   EXPECT_DOUBLE_EQ(observation.pose.orientation.z, world_pose.orientation.z);
   EXPECT_DOUBLE_EQ(observation.pose.orientation.w, world_pose.orientation.w);
+
+  aim_msgs::msg::ArmorPoseSet pose_set;
+  // Deprecated compatibility field; new consumers use observations.
+  pose_set.armor_poses.push_back(world_pose);
+  pose_set.observations.push_back(observation);
+  EXPECT_EQ(pose_set.armor_poses.size(), 1U);
+  EXPECT_EQ(pose_set.observations.size(), 1U);
 }

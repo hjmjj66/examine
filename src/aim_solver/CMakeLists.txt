@@ -84,10 +84,23 @@ if(BUILD_TESTING)
     test/test_pose_observation_forwarding.cpp
   )
   if(TARGET test_pose_observation_forwarding)
-    target_include_directories(test_pose_observation_forwarding PRIVATE include)
+    target_include_directories(test_pose_observation_forwarding PRIVATE
+      include
+      /usr/include/opencv4
+    )
     ament_target_dependencies(test_pose_observation_forwarding
       aim_msgs
       geometry_msgs
+      rclcpp
+      sensor_msgs
+      std_msgs
+      tf2
+      tf2_geometry_msgs
+      tf2_ros
+      visualization_msgs
+    )
+    target_link_libraries(test_pose_observation_forwarding
+      ${OpenCV_LIBS}
     )
   endif()
 
