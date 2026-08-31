@@ -24,7 +24,7 @@ add_executable(aim_solver_node
 target_compile_features(aim_solver_node PUBLIC cxx_std_17)
 target_include_directories(aim_solver_node PRIVATE
   include
-  /usr/include/opencv4
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 ament_target_dependencies(aim_solver_node
@@ -66,7 +66,7 @@ if(BUILD_TESTING)
   if(TARGET test_coordinate_utils)
     target_include_directories(test_coordinate_utils PRIVATE
       include
-      /usr/include/opencv4
+      ${OpenCV_INCLUDE_DIRS}
     )
     target_link_libraries(test_coordinate_utils
       ${OpenCV_LIBS}

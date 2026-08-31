@@ -4,52 +4,77 @@
 
 #include "aim_solver/pose_observation.hpp"
 
+namespace
+{
+
+void expectPoseFieldsEqual(
+  const geometry_msgs::msg::Pose & expected,
+  const geometry_msgs::msg::Pose & actual)
+{
+  EXPECT_DOUBLE_EQ(expected.position.x, actual.position.x);
+  EXPECT_DOUBLE_EQ(expected.position.y, actual.position.y);
+  EXPECT_DOUBLE_EQ(expected.position.z, actual.position.z);
+  EXPECT_DOUBLE_EQ(expected.orientation.x, actual.orientation.x);
+  EXPECT_DOUBLE_EQ(expected.orientation.y, actual.orientation.y);
+  EXPECT_DOUBLE_EQ(expected.orientation.z, actual.orientation.z);
+  EXPECT_DOUBLE_EQ(expected.orientation.w, actual.orientation.w);
+}
+
+}  // namespace
+
 TEST(PoseObservationForwarding, CopiesSourceFieldsAndBothPoses)
 {
   aim_msgs::msg::Armor source;
-  source.corners[0].x = 123.5;
-  source.corners[0].y = 67.25;
+  for (std::size_t i = 0; i < source.corners.size(); ++i) {
+    source.corners[i].x = 100.0 + static_cast<double>(i);
+    source.corners[i].y = 200.0 + static_cast<double>(i);
+    source.corners[i].z = 300.0 + static_cast<double>(i);
+  }
   source.armor_class.class_id = 3U;
+  source.armor_class.team = 2U;
 
   geometry_msgs::msg::Pose camera_pose;
-  camera_pose.position.z = 2.5;
-  camera_pose.orientation.w = 1.0;
+  camera_pose.position.x = 1.0;
+  camera_pose.position.y = 2.0;
+  camera_pose.position.z = 3.0;
+  camera_pose.orientation.x = 0.1;
+  camera_pose.orientation.y = 0.2;
+  camera_pose.orientation.z = 0.3;
+  camera_pose.orientation.w = 0.4;
 
   geometry_msgs::msg::Pose world_pose;
   world_pose.position.x = -4.0;
-  world_pose.orientation.z = 0.5;
-  world_pose.orientation.w = 0.5;
+  world_pose.position.y = -5.0;
+  world_pose.position.z = -6.0;
+  world_pose.orientation.x = -0.1;
+  world_pose.orientation.y = -0.2;
+  world_pose.orientation.z = -0.3;
+  world_pose.orientation.w = -0.4;
 
   const auto observation = aim_solver::makeArmorPoseObservation(
     source, camera_pose, world_pose);
 
-  EXPECT_DOUBLE_EQ(observation.corners[0].x, source.corners[0].x);
-  EXPECT_DOUBLE_EQ(observation.corners[0].y, source.corners[0].y);
+  for (std::size_t i = 0; i < source.corners.size(); ++i) {
+    EXPECT_DOUBLE_EQ(observation.corners[i].x, source.corners[i].x);
+    EXPECT_DOUBLE_EQ(observation.corners[i].y, source.corners[i].y);
+    EXPECT_DOUBLE_EQ(observation.corners[i].z, source.corners[i].z);
+  }
   EXPECT_EQ(observation.armor_class.class_id, source.armor_class.class_id);
-  EXPECT_DOUBLE_EQ(observation.camera_pose.position.z, camera_pose.position.z);
-  EXPECT_DOUBLE_EQ(observation.camera_pose.orientation.w, camera_pose.orientation.w);
-  EXPECT_DOUBLE_EQ(observation.pose.position.x, world_pose.position.x);
-  EXPECT_DOUBLE_EQ(observation.pose.orientation.z, world_pose.orientation.z);
-  EXPECT_DOUBLE_EQ(observation.pose.orientation.w, world_pose.orientation.w);
+  EXPECT_EQ(observation.armor_class.team, source.armor_class.team);
+  expectPoseFieldsEqual(camera_pose, observation.camera_pose);
+  expectPoseFieldsEqual(world_pose, observation.pose);
 
   aim_msgs::msg::ArmorPoseSet pose_set;
   ASSERT_TRUE(aim_solver::appendArmorPoseObservation(
     pose_set, source, camera_pose, &world_pose));
-  EXPECT_EQ(pose_set.armor_poses.size(), 1U);
-  EXPECT_EQ(pose_set.observations.size(), 1U);
+  ASSERT_EQ(pose_set.armor_poses.size(), 1U);
+  ASSERT_EQ(pose_set.observations.size(), 1U);
 
   // Deprecated compatibility field; observations is the tracker interface.
   ASSERT_EQ(pose_set.armor_poses.size(), pose_set.observations.size());
   for (std::size_t i = 0; i < pose_set.armor_poses.size(); ++i) {
-    const auto & legacy_pose = pose_set.armor_poses[i];
-    const auto & observation_pose = pose_set.observations[i].pose;
-    EXPECT_DOUBLE_EQ(legacy_pose.position.x, observation_pose.position.x);
-    EXPECT_DOUBLE_EQ(legacy_pose.position.y, observation_pose.position.y);
-    EXPECT_DOUBLE_EQ(legacy_pose.position.z, observation_pose.position.z);
-    EXPECT_DOUBLE_EQ(legacy_pose.orientation.x, observation_pose.orientation.x);
-    EXPECT_DOUBLE_EQ(legacy_pose.orientation.y, observation_pose.orientation.y);
-    EXPECT_DOUBLE_EQ(legacy_pose.orientation.z, observation_pose.orientation.z);
-    EXPECT_DOUBLE_EQ(legacy_pose.orientation.w, observation_pose.orientation.w);
+    expectPoseFieldsEqual(
+      pose_set.armor_poses[i], pose_set.observations[i].pose);
   }
 }
 
@@ -59,6 +84,9 @@ TEST(PoseObservationForwarding, LeavesBothArraysUnchangedWhenSkipped)
   geometry_msgs::msg::Pose camera_pose;
   aim_msgs::msg::ArmorPoseSet pose_set;
 
+  geometry_msgs::msg::Pose solved_pose;
+  ASSERT_TRUE(aim_solver::appendArmorPoseObservation(
+    pose_set, source, camera_pose, &solved_pose));
   const auto armor_pose_count = pose_set.armor_poses.size();
   const auto observation_count = pose_set.observations.size();
 

@@ -393,24 +393,29 @@ void AimSolverNode::onArmorSets(
       }
 
       geometry_msgs::msg::Pose pose_msg = solved.source_pose;
+      const geometry_msgs::msg::Pose * world_pose = &pose_msg;
 
       if (should_transform) {
         geometry_msgs::msg::Pose transformed_pose;
         if (!transformPose(pose_msg, frame_transform, transformed_pose)) {
-          continue;
+          world_pose = nullptr;
+        } else {
+          pose_msg = transformed_pose;
         }
-        pose_msg = transformed_pose;
       }
 
-      if (enable_optimize_yaw_) {
+      if (world_pose != nullptr && enable_optimize_yaw_) {
         optimizeYaw(
           pipeline, solved.armor, solved.type,
           should_transform ? &frame_transform : nullptr,
           pose_msg);
       }
 
-      appendArmorPoseObservation(
-        pose_set, solved.armor, solved.source_pose, &pose_msg);
+      if (!appendArmorPoseObservation(
+          pose_set, solved.armor, solved.source_pose, world_pose))
+      {
+        continue;
+      }
       solved_poses.emplace_back(solved.type, pose_msg);
     }
 
