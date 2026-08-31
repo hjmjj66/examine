@@ -26,8 +26,19 @@ double wrapAngle(double angle)
   return angle;
 }
 
+void alignWrappedComponent(gtsam::Vector & value, const gtsam::Vector & reference, int index)
+{
+  while (value[index] - reference[index] > kPi) {
+    value[index] -= 2.0 * kPi;
+  }
+  while (value[index] - reference[index] <= -kPi) {
+    value[index] += 2.0 * kPi;
+  }
+}
+
 template<typename Function>
-gtsam::Matrix finiteDifferencePose3(Function function, const gtsam::Pose3 & value)
+gtsam::Matrix finiteDifferencePose3(
+  Function function, const gtsam::Pose3 & value, int wrapped_component = -1)
 {
   gtsam::Matrix jacobian;
   const gtsam::Vector base = function(value);
@@ -35,9 +46,13 @@ gtsam::Matrix finiteDifferencePose3(Function function, const gtsam::Pose3 & valu
   for (int column = 0; column < 6; ++column) {
     gtsam::Vector6 delta = gtsam::Vector6::Zero();
     delta[column] = kFiniteDifferenceStep;
-    const gtsam::Vector plus = function(value.retract(delta));
+    gtsam::Vector plus = function(value.retract(delta));
     delta[column] = -kFiniteDifferenceStep;
-    const gtsam::Vector minus = function(value.retract(delta));
+    gtsam::Vector minus = function(value.retract(delta));
+    if (wrapped_component >= 0) {
+      alignWrappedComponent(plus, base, wrapped_component);
+      alignWrappedComponent(minus, base, wrapped_component);
+    }
     jacobian.col(column) = (plus - minus) / (2.0 * kFiniteDifferenceStep);
   }
   return jacobian;
@@ -71,10 +86,16 @@ gtsam::Matrix finiteDifferenceScalar(Function function, double value)
 }
 
 template<typename Function>
-gtsam::Matrix finiteDifferenceRot2(Function function, const gtsam::Rot2 & value)
+gtsam::Matrix finiteDifferenceRot2(
+  Function function, const gtsam::Rot2 & value, int wrapped_component = -1)
 {
-  const gtsam::Vector plus = function(gtsam::Rot2::fromAngle(value.theta() + kFiniteDifferenceStep));
-  const gtsam::Vector minus = function(gtsam::Rot2::fromAngle(value.theta() - kFiniteDifferenceStep));
+  const gtsam::Vector base = function(value);
+  gtsam::Vector plus = function(gtsam::Rot2::fromAngle(value.theta() + kFiniteDifferenceStep));
+  gtsam::Vector minus = function(gtsam::Rot2::fromAngle(value.theta() - kFiniteDifferenceStep));
+  if (wrapped_component >= 0) {
+    alignWrappedComponent(plus, base, wrapped_component);
+    alignWrappedComponent(minus, base, wrapped_component);
+  }
   gtsam::Matrix jacobian(plus.size(), 1);
   jacobian.col(0) = (plus - minus) / (2.0 * kFiniteDifferenceStep);
   return jacobian;
@@ -272,7 +293,7 @@ gtsam::Vector ArmorGeometryFactor::evaluateError(
       [this, radius, radius_offset, height_offset, center_yaw, &center_position](
         const gtsam::Pose3 & value) {
         return geometryResidual(value, radius, radius_offset, height_offset, center_yaw, center_position);
-      }, p_camera);
+      }, p_camera, 3);
   }
   if (H2) {
     *H2 = finiteDifferenceScalar(
@@ -297,7 +318,7 @@ gtsam::Vector ArmorGeometryFactor::evaluateError(
       [this, &p_camera, radius, radius_offset, height_offset, &center_position](
         const gtsam::Rot2 & value) {
         return geometryResidual(p_camera, radius, radius_offset, height_offset, value, center_position);
-      }, center_yaw);
+      }, center_yaw, 3);
   }
   if (H6) {
     *H6 = finiteDifferencePoint3(
