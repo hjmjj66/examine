@@ -384,7 +384,6 @@ void AimSolverNode::onArmorSets(
       pose_set.header.frame_id = target_frame_;
     }
     pose_set.id = armor_set.id;
-    // Deprecated compatibility field; observations is the canonical contract.
     pose_set.armor_poses.reserve(armor_set.armors.size());
     pose_set.observations.reserve(armor_set.armors.size());
 
@@ -410,9 +409,8 @@ void AimSolverNode::onArmorSets(
           pose_msg);
       }
 
-      pose_set.armor_poses.push_back(pose_msg);
-      pose_set.observations.push_back(makeArmorPoseObservation(
-          solved.armor, solved.source_pose, pose_msg));
+      appendArmorPoseObservation(
+        pose_set, solved.armor, solved.source_pose, &pose_msg);
       solved_poses.emplace_back(solved.type, pose_msg);
     }
 

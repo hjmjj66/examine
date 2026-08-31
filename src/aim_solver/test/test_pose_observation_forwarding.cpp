@@ -1,7 +1,8 @@
+#include <cstddef>
+
 #include <gtest/gtest.h>
 
-#include "aim_solver/aim_solver_node.hpp"
-#include "aim_msgs/msg/armor_pose_set.hpp"
+#include "aim_solver/pose_observation.hpp"
 
 TEST(PoseObservationForwarding, CopiesSourceFieldsAndBothPoses)
 {
@@ -32,9 +33,38 @@ TEST(PoseObservationForwarding, CopiesSourceFieldsAndBothPoses)
   EXPECT_DOUBLE_EQ(observation.pose.orientation.w, world_pose.orientation.w);
 
   aim_msgs::msg::ArmorPoseSet pose_set;
-  // Deprecated compatibility field; new consumers use observations.
-  pose_set.armor_poses.push_back(world_pose);
-  pose_set.observations.push_back(observation);
+  ASSERT_TRUE(aim_solver::appendArmorPoseObservation(
+    pose_set, source, camera_pose, &world_pose));
   EXPECT_EQ(pose_set.armor_poses.size(), 1U);
   EXPECT_EQ(pose_set.observations.size(), 1U);
+
+  // Deprecated compatibility field; observations is the tracker interface.
+  ASSERT_EQ(pose_set.armor_poses.size(), pose_set.observations.size());
+  for (std::size_t i = 0; i < pose_set.armor_poses.size(); ++i) {
+    const auto & legacy_pose = pose_set.armor_poses[i];
+    const auto & observation_pose = pose_set.observations[i].pose;
+    EXPECT_DOUBLE_EQ(legacy_pose.position.x, observation_pose.position.x);
+    EXPECT_DOUBLE_EQ(legacy_pose.position.y, observation_pose.position.y);
+    EXPECT_DOUBLE_EQ(legacy_pose.position.z, observation_pose.position.z);
+    EXPECT_DOUBLE_EQ(legacy_pose.orientation.x, observation_pose.orientation.x);
+    EXPECT_DOUBLE_EQ(legacy_pose.orientation.y, observation_pose.orientation.y);
+    EXPECT_DOUBLE_EQ(legacy_pose.orientation.z, observation_pose.orientation.z);
+    EXPECT_DOUBLE_EQ(legacy_pose.orientation.w, observation_pose.orientation.w);
+  }
+}
+
+TEST(PoseObservationForwarding, LeavesBothArraysUnchangedWhenSkipped)
+{
+  aim_msgs::msg::Armor source;
+  geometry_msgs::msg::Pose camera_pose;
+  aim_msgs::msg::ArmorPoseSet pose_set;
+
+  const auto armor_pose_count = pose_set.armor_poses.size();
+  const auto observation_count = pose_set.observations.size();
+
+  // A failed solve/transform is skipped; neither compatibility nor tracker data is written.
+  EXPECT_FALSE(aim_solver::appendArmorPoseObservation(
+    pose_set, source, camera_pose, nullptr));
+  EXPECT_EQ(pose_set.armor_poses.size(), armor_pose_count);
+  EXPECT_EQ(pose_set.observations.size(), observation_count);
 }
