@@ -90,6 +90,17 @@ void TrackerNode::declareAndLoadParameters()
   declare_parameter<double>("high_speed_process_noise_yaw", 400.0);
   declare_parameter<double>("middle_speed_angular_velocity_threshold", 2.0);
   declare_parameter<double>("high_speed_angular_velocity_threshold", 4.0);
+  declare_parameter<std::vector<double>>(
+    "prior_sigma",
+    std::vector<double>(config_.sigma.prior_sigma.begin(), config_.sigma.prior_sigma.end()));
+  declare_parameter<double>("translation_sigma", config_.sigma.translation_sigma);
+  declare_parameter<double>("velocity_sigma", config_.sigma.velocity_sigma);
+  declare_parameter<double>("yaw_sigma", config_.sigma.yaw_sigma);
+  declare_parameter<double>("yaw_velocity_sigma", config_.sigma.yaw_velocity_sigma);
+  declare_parameter<std::vector<double>>(
+    "geometry_sigma",
+    std::vector<double>(config_.sigma.geometry_sigma.begin(), config_.sigma.geometry_sigma.end()));
+  declare_parameter<double>("pixel_sigma", config_.sigma.pixel_sigma);
   declare_parameter<double>("front_0_noise_scale", 1.0);
   declare_parameter<double>("front_1_noise_scale", 1.0);
   declare_parameter<double>("back_noise_scale", 1.0);
@@ -147,6 +158,19 @@ void TrackerNode::loadTrackerConfig()
     get_parameter("middle_speed_angular_velocity_threshold").as_double();
   config_.process_noise.high_speed_angular_velocity_threshold =
     get_parameter("high_speed_angular_velocity_threshold").as_double();
+  const auto prior_sigma = parameterVector(*this, "prior_sigma");
+  if (prior_sigma.size() == config_.sigma.prior_sigma.size()) {
+    std::copy(prior_sigma.begin(), prior_sigma.end(), config_.sigma.prior_sigma.begin());
+  }
+  config_.sigma.translation_sigma = get_parameter("translation_sigma").as_double();
+  config_.sigma.velocity_sigma = get_parameter("velocity_sigma").as_double();
+  config_.sigma.yaw_sigma = get_parameter("yaw_sigma").as_double();
+  config_.sigma.yaw_velocity_sigma = get_parameter("yaw_velocity_sigma").as_double();
+  const auto geometry_sigma = parameterVector(*this, "geometry_sigma");
+  if (geometry_sigma.size() == config_.sigma.geometry_sigma.size()) {
+    std::copy(geometry_sigma.begin(), geometry_sigma.end(), config_.sigma.geometry_sigma.begin());
+  }
+  config_.sigma.pixel_sigma = get_parameter("pixel_sigma").as_double();
   config_.camera_noise_scales.front_0 = get_parameter("front_0_noise_scale").as_double();
   config_.camera_noise_scales.front_1 = get_parameter("front_1_noise_scale").as_double();
   config_.camera_noise_scales.back = get_parameter("back_noise_scale").as_double();
@@ -256,7 +280,6 @@ void TrackerNode::processArmorPoseSets(
   if (last_processed_stamp_.has_value() && isOlder(stamp, *last_processed_stamp_)) {
     return;
   }
-  last_processed_stamp_ = stamp;
 
   if (source == CameraSource::Front0 || source == CameraSource::Front1) {
     if (hasNormalObservation(*message, outpost_id_)) {
@@ -265,6 +288,7 @@ void TrackerNode::processArmorPoseSets(
   } else if (hasRecentFrontTarget(stamp)) {
     return;
   }
+  last_processed_stamp_ = stamp;
 
   for (auto & entry : trackers_) {
     entry.second.predict(stamp);
@@ -298,16 +322,28 @@ void TrackerNode::processArmorPoseSets(
       continue;
     }
     auto & target = trackerFor(entry.first);
+    bool update_succeeded = true;
     for (const auto & observation : entry.second) {
       configureTrackerCalibration(target, source);
+      bool accepted = false;
       if (!target.active()) {
-        target.initialize(observation);
+        accepted = target.initialize(observation);
       } else {
-        target.addMeasurement(observation);
+        accepted = target.addMeasurement(observation);
       }
-      selected_poses.push_back(observation.world_pose);
+      update_succeeded = update_succeeded && accepted;
+      if (accepted) {
+        selected_poses.push_back(observation.world_pose);
+      }
     }
-    target.optimize();
+    update_succeeded = target.optimize() && update_succeeded;
+    if (!update_succeeded || target.diverged()) {
+      trackers_.erase(entry.first);
+      last_update_stamps_.erase(entry.first);
+      last_confirmation_stamps_.erase(entry.first);
+      consecutive_detection_counts_.erase(entry.first);
+      continue;
+    }
     last_update_stamps_[entry.first] = stamp;
   }
 

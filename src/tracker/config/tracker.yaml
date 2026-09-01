@@ -28,6 +28,15 @@ tracker_node:
     high_speed_process_noise_xy: 1600.0
     high_speed_process_noise_z: 1600.0
     high_speed_process_noise_yaw: 400.0
+    # Standard deviations used by the factor graph. prior_sigma follows
+    # [x, vx, y, vy, z, vz, yaw, yaw_rate, radius, radius_offset, height_offset].
+    prior_sigma: [1.0, 8.0, 1.0, 8.0, 1.0, 8.0, 0.6324555320, 10.0, 1.0, 1.0, 1.0]
+    translation_sigma: 1.0
+    velocity_sigma: 1.0
+    yaw_sigma: 1.0
+    yaw_velocity_sigma: 1.0
+    geometry_sigma: [1.0, 1.0, 1.0, 1.0]
+    pixel_sigma: 1.0
     front_0_noise_scale: 1.0
     front_1_noise_scale: 1.0
     back_noise_scale: 1.0

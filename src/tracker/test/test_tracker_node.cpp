@@ -24,10 +24,11 @@ using namespace std::chrono_literals;
 class TrackerNodeTest : public ::testing::Test
 {
 protected:
-  static std::shared_ptr<tracker::TrackerNode> makeTestNode()
+  static std::shared_ptr<tracker::TrackerNode> makeTestNode(int64_t min_detections = 1)
   {
     rclcpp::NodeOptions options;
-    options.append_parameter_override("min_consecutive_detections_to_track", int64_t{1});
+    options.append_parameter_override(
+      "min_consecutive_detections_to_track", min_detections);
     return std::make_shared<tracker::TrackerNode>(options);
   }
 
@@ -92,7 +93,7 @@ protected:
 
 TEST_F(TrackerNodeTest, DeclaresStableTopicsAndPerCameraNoiseScales)
 {
-  auto node = makeTestNode();
+  auto node = makeTestNode(10);
 
   EXPECT_EQ(
     node->get_parameter("front_0_armor_pose_set_topic").as_string(),

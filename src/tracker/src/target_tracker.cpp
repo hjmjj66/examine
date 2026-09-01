@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <gtsam/inference/Symbol.h>
+#include <gtsam/noiseModel/Diagonal.h>
 #include <gtsam/noiseModel/Isotropic.h>
 #include <gtsam/nonlinear/PriorFactor.h>
 
@@ -33,6 +34,15 @@ gtsam::SharedNoiseModel isotropicNoise(std::size_t dimension, double sigma)
 {
   return gtsam::noiseModel::Isotropic::Sigma(
     static_cast<int>(dimension), positiveSigma(sigma));
+}
+
+gtsam::SharedNoiseModel diagonalNoise(const gtsam::Vector & sigmas)
+{
+  gtsam::Vector safe_sigmas = sigmas;
+  for (int index = 0; index < safe_sigmas.size(); ++index) {
+    safe_sigmas[index] = positiveSigma(safe_sigmas[index]);
+  }
+  return gtsam::noiseModel::Diagonal::Sigmas(safe_sigmas);
 }
 
 }  // namespace
@@ -627,19 +637,27 @@ void TargetTracker::addFrame(
       config_.process_noise.middle_speed : config_.process_noise.high_speed);
     const double dt_squared = dt * dt;
     const double dt_fourth = dt_squared * dt_squared;
-    const double translation_sigma = config_.sigma.translation_sigma * std::sqrt(
+    const double translation_sigma_xy = positiveSigma(config_.sigma.translation_sigma) * std::sqrt(
       std::max(kMinimumSigma, dt_fourth * positiveSigma(band.process_noise_xy) / 4.0));
-    const double velocity_sigma = config_.sigma.velocity_sigma * std::sqrt(
+    const double translation_sigma_z = positiveSigma(config_.sigma.translation_sigma) * std::sqrt(
+      std::max(kMinimumSigma, dt_fourth * positiveSigma(band.process_noise_z) / 4.0));
+    const double velocity_sigma_xy = positiveSigma(config_.sigma.velocity_sigma) * std::sqrt(
       std::max(kMinimumSigma, dt_squared * positiveSigma(band.process_noise_xy)));
-    const double yaw_sigma = config_.sigma.yaw_sigma * std::sqrt(
+    const double velocity_sigma_z = positiveSigma(config_.sigma.velocity_sigma) * std::sqrt(
+      std::max(kMinimumSigma, dt_squared * positiveSigma(band.process_noise_z)));
+    const double yaw_sigma = positiveSigma(config_.sigma.yaw_sigma) * std::sqrt(
       std::max(kMinimumSigma, dt_fourth * positiveSigma(band.process_noise_yaw) / 4.0));
-    const double yaw_velocity_sigma = config_.sigma.yaw_velocity_sigma * std::sqrt(
+    const double yaw_velocity_sigma = positiveSigma(config_.sigma.yaw_velocity_sigma) * std::sqrt(
       std::max(kMinimumSigma, dt_squared * positiveSigma(band.process_noise_yaw)));
+    gtsam::Vector translation_sigmas(3);
+    translation_sigmas << translation_sigma_xy, translation_sigma_xy, translation_sigma_z;
+    gtsam::Vector velocity_sigmas(3);
+    velocity_sigmas << velocity_sigma_xy, velocity_sigma_xy, velocity_sigma_z;
     addFactor(graph, boost::make_shared<TranslationFactor>(
         frameKey('x', previous->frame_id), frameKey('v', previous->frame_id), x_key, dt,
-        isotropicNoise(3, translation_sigma)));
+        diagonalNoise(translation_sigmas)));
     addFactor(graph, boost::make_shared<VelocityFactor>(
-        frameKey('v', previous->frame_id), v_key, isotropicNoise(3, velocity_sigma)));
+        frameKey('v', previous->frame_id), v_key, diagonalNoise(velocity_sigmas)));
     addFactor(graph, boost::make_shared<YawFactor>(
         frameKey('r', previous->frame_id), frameKey('w', previous->frame_id), r_key, dt,
         isotropicNoise(1, yaw_sigma)));
@@ -648,10 +666,16 @@ void TargetTracker::addFrame(
   }
 
   if (add_priors && previous == nullptr) {
+    gtsam::Vector prior_position_sigmas(3);
+    prior_position_sigmas << config_.sigma.prior_sigma[0], config_.sigma.prior_sigma[2],
+      config_.sigma.prior_sigma[4];
+    gtsam::Vector prior_velocity_sigmas(3);
+    prior_velocity_sigmas << config_.sigma.prior_sigma[1], config_.sigma.prior_sigma[3],
+      config_.sigma.prior_sigma[5];
     addFactor(graph, boost::make_shared<gtsam::PriorFactor<gtsam::Point3>>(
-        x_key, initial_x, isotropicNoise(3, config_.sigma.prior_sigma[0])));
+        x_key, initial_x, diagonalNoise(prior_position_sigmas)));
     addFactor(graph, boost::make_shared<gtsam::PriorFactor<gtsam::Vector3>>(
-        v_key, initial_v, isotropicNoise(3, config_.sigma.prior_sigma[1])));
+        v_key, initial_v, diagonalNoise(prior_velocity_sigmas)));
     addFactor(graph, boost::make_shared<gtsam::PriorFactor<gtsam::Rot2>>(
         r_key, initial_r, isotropicNoise(1, config_.sigma.prior_sigma[6])));
     addFactor(graph, boost::make_shared<gtsam::PriorFactor<double>>(
@@ -681,10 +705,15 @@ void TargetTracker::addMeasurementFactors(
   const gtsam::Key position_key = frameKey('x', frame.frame_id);
   const auto & calibration = calibrations_[cameraIndex(measurement.observation.source)];
   const double scale = cameraScale(measurement.observation.source);
+  gtsam::Vector geometry_sigmas(4);
+  for (int index = 0; index < geometry_sigmas.size(); ++index) {
+    geometry_sigmas[index] =
+      config_.sigma.geometry_sigma[static_cast<std::size_t>(index)] * scale;
+  }
   addFactor(graph, boost::make_shared<ArmorGeometryFactor>(
       measurement.pose_key, radius_key, radius_offset_key, height_offset_key, yaw_key,
       position_key, measurement.observation.camera_to_world, measurement.armor_index,
-      isotropicNoise(4, config_.sigma.geometry_sigma[0] * scale)));
+      diagonalNoise(geometry_sigmas)));
 
   if (calibrationIsUsable(measurement.observation.source)) {
     std::array<gtsam::Point2, 4> corners;
@@ -701,7 +730,7 @@ void TargetTracker::addMeasurementFactors(
     addFactor(graph, boost::make_shared<ArmorReprojFactor>(
         measurement.pose_key, calibration.camera_matrix,
         calibration.distortion_coefficients, armorPoints(measurement.observation), corners,
-        isotropicNoise(8, config_.sigma.pixel_sigma * scale)));
+        isotropicNoise(8, positiveSigma(config_.sigma.pixel_sigma) * scale)));
   }
   (void)values;
 }
