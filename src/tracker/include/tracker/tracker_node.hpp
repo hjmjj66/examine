@@ -41,7 +41,6 @@ private:
   static double secondsBetween(
     const builtin_interfaces::msg::Time & lhs,
     const builtin_interfaces::msg::Time & rhs);
-  static gtsam::Pose3 poseToGtsam(const geometry_msgs::msg::Pose & pose);
   static bool hasNormalObservation(const ArmorPoseSetArray & message, std::uint8_t outpost_id);
 
   void onArmorPoseSets(
@@ -62,14 +61,12 @@ private:
   void initializeCameraInputs();
   void loadCalibration(CameraSource source, const std::string & prefix);
   void loadTrackerConfig();
-  void configureTrackerCalibration(TargetTracker & target, CameraSource source,
-    const ArmorObservation & observation);
+  void configureTrackerCalibration(TargetTracker & target, CameraSource source);
   TargetTracker & trackerFor(std::uint8_t target_id);
   void removeExpiredTrackers(const builtin_interfaces::msg::Time & stamp);
 
   TrackerConfig config_{};
   std::array<CameraCalibration, 3> calibrations_{};
-  std::array<bool, 3> camera_to_world_known_{};
   std::map<std::uint8_t, TargetTracker> trackers_;
   std::map<std::uint8_t, builtin_interfaces::msg::Time> last_update_stamps_;
   std::map<std::uint8_t, builtin_interfaces::msg::Time> last_confirmation_stamps_;

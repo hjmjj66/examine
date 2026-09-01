@@ -107,6 +107,7 @@ TEST_F(TrackerNodeTest, DeclaresStableTopicsAndPerCameraNoiseScales)
     node->get_parameter("fused_target_state_topic").as_string(),
     "/aim_predictor/fused/target_states");
   EXPECT_EQ(node->get_parameter("window_size").as_int(), 30);
+  EXPECT_EQ(node->get_parameter("min_consecutive_detections_to_track").as_int(), 10);
   EXPECT_DOUBLE_EQ(node->get_parameter("front_0_noise_scale").as_double(), 1.0);
   EXPECT_DOUBLE_EQ(node->get_parameter("front_1_noise_scale").as_double(), 1.0);
   EXPECT_DOUBLE_EQ(node->get_parameter("back_noise_scale").as_double(), 1.0);

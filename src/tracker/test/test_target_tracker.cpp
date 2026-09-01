@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include <gtsam/inference/Symbol.h>
+
 namespace
 {
 
@@ -69,6 +71,38 @@ TEST(TargetTracker, InitializesTheDocumentedElevenStateOrder)
   EXPECT_TRUE(target.active());
 }
 
+TEST(TargetTracker, PreservesFullCameraPoseForReprojectionInitialization)
+{
+  tracker::TargetTracker target;
+  auto input = observation(3, stamp(10), 0.4, point(1.0, 2.0, 3.0));
+  const double roll = -0.12;
+  const double pitch = 0.18;
+  const double yaw = 0.4;
+  const double half_roll = roll / 2.0;
+  const double half_pitch = pitch / 2.0;
+  const double half_yaw = yaw / 2.0;
+  input.camera_pose.orientation.w =
+    std::cos(half_roll) * std::cos(half_pitch) * std::cos(half_yaw) +
+    std::sin(half_roll) * std::sin(half_pitch) * std::sin(half_yaw);
+  input.camera_pose.orientation.x =
+    std::sin(half_roll) * std::cos(half_pitch) * std::cos(half_yaw) -
+    std::cos(half_roll) * std::sin(half_pitch) * std::sin(half_yaw);
+  input.camera_pose.orientation.y =
+    std::cos(half_roll) * std::sin(half_pitch) * std::cos(half_yaw) +
+    std::sin(half_roll) * std::cos(half_pitch) * std::sin(half_yaw);
+  input.camera_pose.orientation.z =
+    std::cos(half_roll) * std::cos(half_pitch) * std::sin(half_yaw) -
+    std::sin(half_roll) * std::sin(half_pitch) * std::cos(half_yaw);
+
+  ASSERT_TRUE(target.initialize(input));
+
+  const gtsam::Pose3 actual = target.values().at<gtsam::Pose3>(gtsam::Symbol('p', 0));
+  const gtsam::Pose3 expected(
+    gtsam::Rot3::Ypr(yaw, pitch, roll),
+    gtsam::Point3(1.0, 2.0, 3.0));
+  EXPECT_TRUE(actual.rotation().matrix().isApprox(expected.rotation().matrix(), 1e-9));
+}
+
 TEST(TargetTracker, PredictsConstantVelocityStateWithoutMovingZeroVelocityTarget)
 {
   tracker::TargetTracker target;
@@ -79,6 +113,19 @@ TEST(TargetTracker, PredictsConstantVelocityStateWithoutMovingZeroVelocityTarget
 
   EXPECT_TRUE(target.state().isApprox(before));
   EXPECT_TRUE(target.acceptTimestamp(stamp(11, 500000000)));
+}
+
+TEST(TargetTracker, PreservesLegacyConvergenceAfterFourUpdates)
+{
+  tracker::TargetTracker target;
+  ASSERT_TRUE(target.initialize(observation(1, stamp(10), 0.2, point(1.0, 2.0, 3.0))));
+  EXPECT_FALSE(target.converged());
+
+  ASSERT_TRUE(target.addMeasurement(observation(1, stamp(11), 0.2, point(1.0, 2.0, 3.0))));
+  ASSERT_TRUE(target.addMeasurement(observation(1, stamp(12), 0.2, point(1.0, 2.0, 3.0))));
+  ASSERT_TRUE(target.addMeasurement(observation(1, stamp(13), 0.2, point(1.0, 2.0, 3.0))));
+
+  EXPECT_TRUE(target.converged());
 }
 
 TEST(TargetTracker, RejectsOnlyTimestampsOlderThanTheLastAcceptedStamp)

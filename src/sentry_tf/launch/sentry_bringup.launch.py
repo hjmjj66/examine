@@ -20,7 +20,7 @@ def include_launch(package_name: str, launch_file: str, launch_arguments=None):
 def generate_launch_description():
     sentry_tf_params = LaunchConfiguration("sentry_tf_params")
     solver_params = LaunchConfiguration("solver_params")
-    predictor_params = LaunchConfiguration("predictor_params")
+    tracker_params = LaunchConfiguration("tracker_params")
     decider_params = LaunchConfiguration("decider_params")
     controller_params = LaunchConfiguration("controller_params")
 
@@ -34,10 +34,10 @@ def generate_launch_description():
         "config",
         "aim_solver.yaml",
     )
-    predictor_default = os.path.join(
-        get_package_share_directory("aim_predictor"),
+    tracker_default = os.path.join(
+        get_package_share_directory("tracker"),
         "config",
-        "aim_predictor.yaml",
+        "tracker.yaml",
     )
     decider_default = os.path.join(
         get_package_share_directory("aim_armor_decider"),
@@ -62,9 +62,9 @@ def generate_launch_description():
             description="Path to aim_solver parameters.",
         ),
         DeclareLaunchArgument(
-            "predictor_params",
-            default_value=predictor_default,
-            description="Path to aim_predictor parameters.",
+            "tracker_params",
+            default_value=tracker_default,
+            description="Path to tracker parameters.",
         ),
         DeclareLaunchArgument(
             "decider_params",
@@ -90,9 +90,9 @@ def generate_launch_description():
             {"config_file": solver_params},
         ),
         include_launch(
-            "aim_predictor",
-            "aim_predictor.launch.py",
-            {"params_file": predictor_params},
+            "tracker",
+            "tracker.launch.py",
+            {"params_file": tracker_params},
         ),
         include_launch(
             "aim_outpost_predictor",

@@ -94,9 +94,9 @@ sleep 1
 check_processes
 
 echo ""
-echo "--- ③ PnP 解算 + 目标预测 + 前哨站预测 ---"
+echo "--- ③ PnP 解算 + 因子图跟踪 + 前哨站预测 ---"
 launch_bg "aim_solver" "${SOLVER_LAUNCH[@]}"
-launch_bg "aim_predictor" ros2 launch aim_predictor aim_predictor.launch.py
+launch_bg "tracker" ros2 launch tracker tracker.launch.py
 launch_bg "aim_outpost_predictor" ros2 launch aim_outpost_predictor aim_outpost_predictor.launch.py
 sleep 1
 check_processes

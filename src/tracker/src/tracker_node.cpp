@@ -6,7 +6,6 @@
 #include <limits>
 #include <utility>
 
-#include <gtsam/geometry/Rot3.h>
 #include <opencv2/core.hpp>
 
 namespace tracker
@@ -39,17 +38,6 @@ cv::Mat matrixFromRowMajor(const std::vector<double> & values, int rows, int col
     }
   }
   return result;
-}
-
-bool finitePose(const geometry_msgs::msg::Pose & pose)
-{
-  const double quaternion_norm = std::hypot(
-    std::hypot(pose.orientation.x, pose.orientation.y),
-    std::hypot(pose.orientation.z, pose.orientation.w));
-  return std::isfinite(pose.position.x) && std::isfinite(pose.position.y) &&
-         std::isfinite(pose.position.z) && std::isfinite(pose.orientation.x) &&
-         std::isfinite(pose.orientation.y) && std::isfinite(pose.orientation.z) &&
-         std::isfinite(pose.orientation.w) && quaternion_norm > 1e-9;
 }
 
 }  // namespace
@@ -220,14 +208,6 @@ double TrackerNode::secondsBetween(
     1e-9 * static_cast<double>(lhs.nanosec);
 }
 
-gtsam::Pose3 TrackerNode::poseToGtsam(const geometry_msgs::msg::Pose & pose)
-{
-  return gtsam::Pose3(
-    gtsam::Rot3::Quaternion(
-      pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z),
-    gtsam::Point3(pose.position.x, pose.position.y, pose.position.z));
-}
-
 bool TrackerNode::hasNormalObservation(const ArmorPoseSetArray & message, std::uint8_t outpost_id)
 {
   return std::any_of(
@@ -260,17 +240,9 @@ TargetTracker & TrackerNode::trackerFor(std::uint8_t target_id)
 }
 
 void TrackerNode::configureTrackerCalibration(
-  TargetTracker & target, CameraSource source, const ArmorObservation & observation)
+  TargetTracker & target, CameraSource source)
 {
   const std::size_t index = cameraIndex(source);
-  if (!camera_to_world_known_[index] && finitePose(observation.world_pose) &&
-    finitePose(observation.camera_pose))
-  {
-    const gtsam::Pose3 world_pose = poseToGtsam(observation.world_pose);
-    const gtsam::Pose3 camera_pose = poseToGtsam(observation.camera_pose);
-    calibrations_[index].camera_to_world = world_pose.compose(camera_pose.inverse());
-    camera_to_world_known_[index] = true;
-  }
   target.setCameraCalibration(source, calibrations_[index]);
 }
 
@@ -327,7 +299,7 @@ void TrackerNode::processArmorPoseSets(
     }
     auto & target = trackerFor(entry.first);
     for (const auto & observation : entry.second) {
-      configureTrackerCalibration(target, source, observation);
+      configureTrackerCalibration(target, source);
       if (!target.active()) {
         target.initialize(observation);
       } else {

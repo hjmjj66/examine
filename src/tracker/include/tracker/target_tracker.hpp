@@ -34,7 +34,6 @@ struct CameraCalibration
 {
   cv::Mat camera_matrix;
   cv::Mat distortion_coefficients;
-  gtsam::Pose3 camera_to_world;
 };
 
 class TargetTracker

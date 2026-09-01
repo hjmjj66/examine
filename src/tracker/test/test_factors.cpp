@@ -217,6 +217,8 @@ TEST(TrackerMeasurement, ConvertsObservationFieldsWithoutLoss)
   aim_msgs::msg::ArmorPoseObservation message;
   message.pose.position.x = 1.0;
   message.camera_pose.position.z = 2.0;
+  message.camera_to_world.translation.x = 4.0;
+  message.camera_to_world.rotation.w = 1.0;
   message.corners[2].x = 123.0;
   message.armor_class.class_id = 3;
   builtin_interfaces::msg::Time stamp;
@@ -232,6 +234,8 @@ TEST(TrackerMeasurement, ConvertsObservationFieldsWithoutLoss)
   EXPECT_EQ(observation.stamp.nanosec, 11u);
   EXPECT_DOUBLE_EQ(observation.world_pose.position.x, 1.0);
   EXPECT_DOUBLE_EQ(observation.camera_pose.position.z, 2.0);
+  EXPECT_DOUBLE_EQ(observation.camera_to_world.translation().x(), 4.0);
+  EXPECT_DOUBLE_EQ(observation.camera_to_world.rotation().ypr().x(), 0.0);
   EXPECT_DOUBLE_EQ(observation.corners[2].x, 123.0);
   EXPECT_EQ(observation.armor_class.class_id, 3);
 }

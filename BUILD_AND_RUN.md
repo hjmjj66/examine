@@ -11,7 +11,7 @@ cd /home/hustlyrm/sentry.aim && source /opt/ros/humble/setup.bash && source /hom
 source /opt/ros/humble/setup.bash && source /home/hustlyrm/ros2_ly_ws_sentry/install/setup.bash && source /home/hustlyrm/sentry.aim/install/setup.bash
 ## 2. 完整自瞄启动
 
-云台驱动和自矄链路必须分开启动，并保持在两个终端中运行。`start.bash` 不启动云台驱动，只启动 TF、相机、预测、决策和控制节点。
+云台驱动和自矄链路必须分开启动，并保持在两个终端中运行。`start.bash` 不启动云台驱动，只启动 TF、相机、solver、tracker、决策和控制节点。
 
 终端 1：启动正式云台驱动并保持运行：
 

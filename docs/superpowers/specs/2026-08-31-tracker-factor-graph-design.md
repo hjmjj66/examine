@@ -35,6 +35,7 @@ The existing pose-only output is insufficient for pixel reprojection factors.
 ```text
 geometry_msgs/Pose pose
 geometry_msgs/Pose camera_pose
+geometry_msgs/Transform camera_to_world
 geometry_msgs/Point[4] corners
 aim_msgs/ArmorClass armor_class
 ```
@@ -49,6 +50,8 @@ aim_msgs/ArmorPoseObservation[] observations
 
 `pose` is the transformed, yaw-optimized pose in the common world frame.
 `camera_pose` is the corresponding camera-frame pose used by reprojection.
+`camera_to_world` is the TF transform used for this observation at the
+message timestamp. It maps camera-frame points into the common world frame.
 `corners` are the detector's original image points. `armor_class` identifies
 the armor geometry. The four values are carried in one object so pose, type,
 and corners cannot become mismatched through parallel arrays.

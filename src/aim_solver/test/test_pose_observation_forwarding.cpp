@@ -51,8 +51,15 @@ TEST(PoseObservationForwarding, CopiesSourceFieldsAndBothPoses)
   world_pose.orientation.z = -0.3;
   world_pose.orientation.w = -0.4;
 
+  geometry_msgs::msg::Transform camera_to_world;
+  camera_to_world.translation.x = 10.0;
+  camera_to_world.translation.y = 11.0;
+  camera_to_world.translation.z = 12.0;
+  camera_to_world.rotation.z = 0.25;
+  camera_to_world.rotation.w = 0.9682458365518543;
+
   const auto observation = aim_solver::makeArmorPoseObservation(
-    source, camera_pose, world_pose);
+    source, camera_pose, world_pose, camera_to_world);
 
   for (std::size_t i = 0; i < source.corners.size(); ++i) {
     EXPECT_DOUBLE_EQ(observation.corners[i].x, source.corners[i].x);
@@ -63,10 +70,20 @@ TEST(PoseObservationForwarding, CopiesSourceFieldsAndBothPoses)
   EXPECT_EQ(observation.armor_class.team, source.armor_class.team);
   expectPoseFieldsEqual(camera_pose, observation.camera_pose);
   expectPoseFieldsEqual(world_pose, observation.pose);
+  EXPECT_DOUBLE_EQ(
+    observation.camera_to_world.translation.x, camera_to_world.translation.x);
+  EXPECT_DOUBLE_EQ(
+    observation.camera_to_world.translation.y, camera_to_world.translation.y);
+  EXPECT_DOUBLE_EQ(
+    observation.camera_to_world.translation.z, camera_to_world.translation.z);
+  EXPECT_DOUBLE_EQ(
+    observation.camera_to_world.rotation.z, camera_to_world.rotation.z);
+  EXPECT_DOUBLE_EQ(
+    observation.camera_to_world.rotation.w, camera_to_world.rotation.w);
 
   aim_msgs::msg::ArmorPoseSet pose_set;
   ASSERT_TRUE(aim_solver::appendArmorPoseObservation(
-    pose_set, source, camera_pose, &world_pose));
+    pose_set, source, camera_pose, camera_to_world, &world_pose));
   ASSERT_EQ(pose_set.armor_poses.size(), 1U);
   ASSERT_EQ(pose_set.observations.size(), 1U);
 
@@ -82,17 +99,19 @@ TEST(PoseObservationForwarding, LeavesBothArraysUnchangedWhenSkipped)
 {
   aim_msgs::msg::Armor source;
   geometry_msgs::msg::Pose camera_pose;
+  geometry_msgs::msg::Transform camera_to_world;
+  camera_to_world.rotation.w = 1.0;
   aim_msgs::msg::ArmorPoseSet pose_set;
 
   geometry_msgs::msg::Pose solved_pose;
   ASSERT_TRUE(aim_solver::appendArmorPoseObservation(
-    pose_set, source, camera_pose, &solved_pose));
+    pose_set, source, camera_pose, camera_to_world, &solved_pose));
   const auto armor_pose_count = pose_set.armor_poses.size();
   const auto observation_count = pose_set.observations.size();
 
   // A failed solve/transform is skipped; neither compatibility nor tracker data is written.
   EXPECT_FALSE(aim_solver::appendArmorPoseObservation(
-    pose_set, source, camera_pose, nullptr));
+    pose_set, source, camera_pose, camera_to_world, nullptr));
   EXPECT_EQ(pose_set.armor_poses.size(), armor_pose_count);
   EXPECT_EQ(pose_set.observations.size(), observation_count);
 }

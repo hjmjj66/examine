@@ -367,6 +367,12 @@ void AimSolverNode::onArmorSets(
     }
   }
 
+  geometry_msgs::msg::Transform camera_to_world;
+  camera_to_world.rotation.w = 1.0;
+  if (should_transform) {
+    camera_to_world = frame_transform.transform;
+  }
+
   aim_msgs::msg::ArmorPoseSetArray output;
   output.header = msg->header;
   output.header.stamp = transform_stamp_msg;
@@ -412,7 +418,7 @@ void AimSolverNode::onArmorSets(
       }
 
       if (!appendArmorPoseObservation(
-          pose_set, solved.armor, solved.source_pose, world_pose))
+          pose_set, solved.armor, solved.source_pose, camera_to_world, world_pose))
       {
         continue;
       }

@@ -15,7 +15,7 @@ struct GeometryInitialization
 
 struct LifecycleConfig
 {
-  std::size_t confirmation_count{10};
+  std::size_t confirmation_count{4};
   double confirmation_min_interval_sec{0.03};
   double target_lost_timeout_sec{0.20};
   double front_target_hold_sec{0.10};

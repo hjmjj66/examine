@@ -55,7 +55,6 @@ TargetTracker::TargetTracker(
   for (std::size_t i = 0; i < calibrations_.size(); ++i) {
     calibrations_[i].camera_matrix = calibrations[i].camera_matrix.clone();
     calibrations_[i].distortion_coefficients = calibrations[i].distortion_coefficients.clone();
-    calibrations_[i].camera_to_world = calibrations[i].camera_to_world;
   }
 }
 
@@ -65,7 +64,6 @@ void TargetTracker::setCameraCalibration(
   const std::size_t index = cameraIndex(source);
   calibrations_[index].camera_matrix = calibration.camera_matrix.clone();
   calibrations_[index].distortion_coefficients = calibration.distortion_coefficients.clone();
-  calibrations_[index].camera_to_world = calibration.camera_to_world;
 }
 
 bool TargetTracker::initialize(const ArmorObservation & observation)
@@ -390,7 +388,9 @@ double TargetTracker::yawFromPose(const geometry_msgs::msg::Pose & pose)
 gtsam::Pose3 TargetTracker::toPose3(const geometry_msgs::msg::Pose & pose)
 {
   return gtsam::Pose3(
-    gtsam::Rot3::Ypr(yawFromPose(pose), 0.0, 0.0), toPoint3(pose.position));
+    gtsam::Rot3::Quaternion(
+      pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z),
+    toPoint3(pose.position));
 }
 
 gtsam::Point3 TargetTracker::toPoint3(const geometry_msgs::msg::Point & point)
@@ -625,14 +625,16 @@ void TargetTracker::addFrame(
       config_.process_noise.low_speed :
       (std::abs(state_[7]) < config_.process_noise.high_speed_angular_velocity_threshold ?
       config_.process_noise.middle_speed : config_.process_noise.high_speed);
-    const double translation_sigma =
-      config_.sigma.translation_sigma * std::sqrt(positiveSigma(band.process_noise_xy));
-    const double velocity_sigma =
-      config_.sigma.velocity_sigma * std::sqrt(positiveSigma(band.process_noise_xy));
-    const double yaw_sigma =
-      config_.sigma.yaw_sigma * std::sqrt(positiveSigma(band.process_noise_yaw));
-    const double yaw_velocity_sigma =
-      config_.sigma.yaw_velocity_sigma * std::sqrt(positiveSigma(band.process_noise_yaw));
+    const double dt_squared = dt * dt;
+    const double dt_fourth = dt_squared * dt_squared;
+    const double translation_sigma = config_.sigma.translation_sigma * std::sqrt(
+      std::max(kMinimumSigma, dt_fourth * positiveSigma(band.process_noise_xy) / 4.0));
+    const double velocity_sigma = config_.sigma.velocity_sigma * std::sqrt(
+      std::max(kMinimumSigma, dt_squared * positiveSigma(band.process_noise_xy)));
+    const double yaw_sigma = config_.sigma.yaw_sigma * std::sqrt(
+      std::max(kMinimumSigma, dt_fourth * positiveSigma(band.process_noise_yaw) / 4.0));
+    const double yaw_velocity_sigma = config_.sigma.yaw_velocity_sigma * std::sqrt(
+      std::max(kMinimumSigma, dt_squared * positiveSigma(band.process_noise_yaw)));
     addFactor(graph, boost::make_shared<TranslationFactor>(
         frameKey('x', previous->frame_id), frameKey('v', previous->frame_id), x_key, dt,
         isotropicNoise(3, translation_sigma)));
@@ -681,14 +683,20 @@ void TargetTracker::addMeasurementFactors(
   const double scale = cameraScale(measurement.observation.source);
   addFactor(graph, boost::make_shared<ArmorGeometryFactor>(
       measurement.pose_key, radius_key, radius_offset_key, height_offset_key, yaw_key,
-      position_key, calibration.camera_to_world, measurement.armor_index,
+      position_key, measurement.observation.camera_to_world, measurement.armor_index,
       isotropicNoise(4, config_.sigma.geometry_sigma[0] * scale)));
 
   if (calibrationIsUsable(measurement.observation.source)) {
     std::array<gtsam::Point2, 4> corners;
+    // Detector order is left-top, left-bottom, right-bottom, right-top;
+    // armorPoints() follows the solver/PnP order left-bottom, left-top,
+    // right-top, right-bottom.
+    const std::array<std::size_t, 4> solver_order{1U, 0U, 3U, 2U};
     for (std::size_t index = 0; index < corners.size(); ++index) {
+      const std::size_t source_index = solver_order[index];
       corners[index] = gtsam::Point2(
-        measurement.observation.corners[index].x, measurement.observation.corners[index].y);
+        measurement.observation.corners[source_index].x,
+        measurement.observation.corners[source_index].y);
     }
     addFactor(graph, boost::make_shared<ArmorReprojFactor>(
         measurement.pose_key, calibration.camera_matrix,

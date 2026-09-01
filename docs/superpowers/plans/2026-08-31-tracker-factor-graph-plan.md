@@ -4,7 +4,7 @@
 
 **Goal:** Replace ordinary-vehicle EKF prediction with a ROS2 `tracker` package using GTSAM, preserving `TargetStateArray` and downstream topic contracts.
 
-**Architecture:** Extend solver output with one observation object per armor containing world pose, camera pose, image corners, and class. Maintain one shared GTSAM target graph per ordinary ID with a fixed 30-frame window; keep outpost tracking unchanged.
+**Architecture:** Extend solver output with one observation object per armor containing world pose, camera pose, the timestamped camera-to-world transform, image corners, and class. Maintain one shared GTSAM target graph per ordinary ID with a fixed 30-frame window; keep outpost tracking unchanged.
 
 **Tech Stack:** ROS2 `ament_cmake`, C++17, Eigen3, GTSAM/ISAM2, geometry_msgs, aim_msgs, GoogleTest, Python launch.
 
@@ -27,7 +27,7 @@
 
 - [ ] **Step 1: Write a failing forwarding test.** Add a test for `aim_solver::makeArmorPoseObservation(source, camera_pose, world_pose)` that sets one corner, one class ID, and one coordinate in both poses, then asserts exact equality in all returned fields.
 - [ ] **Step 2: Run `colcon test --packages-select aim_solver --ctest-args -R PoseObservationForwarding`.** Expected: missing message/helper or compilation failure.
-- [ ] **Step 3: Add exact message definitions.** `ArmorPoseObservation.msg` contains `geometry_msgs/Pose pose`, `geometry_msgs/Pose camera_pose`, `geometry_msgs/Point[4] corners`, and `aim_msgs/ArmorClass armor_class`. `ArmorPoseSet.msg` contains `uint8 id`, `std_msgs/Header header`, and `aim_msgs/ArmorPoseObservation[] observations`. Register the new message and dependencies in `rosidl_generate_interfaces`.
+- [ ] **Step 3: Add exact message definitions.** `ArmorPoseObservation.msg` contains `geometry_msgs/Pose pose`, `geometry_msgs/Pose camera_pose`, `geometry_msgs/Transform camera_to_world`, `geometry_msgs/Point[4] corners`, and `aim_msgs/ArmorClass armor_class`. `ArmorPoseSet.msg` contains `uint8 id`, `std_msgs/Header header`, and `aim_msgs/ArmorPoseObservation[] observations`. Register the new message and dependencies in `rosidl_generate_interfaces`.
 - [ ] **Step 4: Implement forwarding.** Preserve the camera pose before TF conversion, copy detector corners/class, apply existing world transform and yaw optimization to `pose`, and append one observation per solved armor. Remove the old parallel pose-array write.
 - [ ] **Step 5: Run `colcon build --packages-select aim_msgs aim_solver --symlink-install` and the forwarding test.** Expected: build and test pass.
 - [ ] **Step 6: Commit with `git add src/aim_msgs src/aim_solver; git commit -m "feat: forward armor observations from solver"`.**

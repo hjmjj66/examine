@@ -15,6 +15,7 @@
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
   <depend>gimbal_driver</depend>
+  <exec_depend>tracker</exec_depend>
   <!-- <depend>gimbal_driver</depend> -->
 
   <test_depend>ament_lint_auto</test_depend>
